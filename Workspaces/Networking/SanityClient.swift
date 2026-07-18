@@ -76,14 +76,29 @@ enum GROQ {
         "tags": tags[]->{name, "slug": slug.current}}
         """
 
-    /// Feed page, optionally narrowed to a tag and/or a guest-name prefix search.
-    static func setups(offset: Int, limit: Int = pageSize, tagSlug: String? = nil, search: String? = nil) -> String {
+    /// Feed page, optionally narrowed to a tag, a guest-name prefix search,
+    /// a piece of gear (token match on gear names), or a collection (setups
+    /// hold direct references to collection documents).
+    static func setups(
+        offset: Int,
+        limit: Int = pageSize,
+        tagSlug: String? = nil,
+        search: String? = nil,
+        gearName: String? = nil,
+        collectionId: String? = nil
+    ) -> String {
         var filters = [#"_type=="setup""#, notDraft]
         if let tagSlug {
             filters.append("\"\(escape(tagSlug))\" in tags[]->slug.current")
         }
         if let search, !search.isEmpty {
             filters.append("guestName match \"\(escape(search))*\"")
+        }
+        if let gearName, !gearName.isEmpty {
+            filters.append("count(gear[name match \"\(escape(gearName))\"]) > 0")
+        }
+        if let collectionId {
+            filters.append("references(\"\(escape(collectionId))\")")
         }
         let filter = filters.joined(separator: " && ")
         return "*[\(filter)] | order(issueNumber desc)[\(offset)...\(offset + limit)]\(summaryProjection)"
@@ -103,6 +118,19 @@ enum GROQ {
     }
 
     static let allTags = #"*[_type=="tag"]{name, "slug": slug.current} | order(name asc)"#
+
+    /// The nine curated collections with live setup counts. Membership is by
+    /// direct reference only — collections also carry a `matchingTags` field,
+    /// but it over-matches wildly (hundreds of setups) so it is ignored.
+    static let collections = """
+        *[_type=="collection"]{"id": _id, title, "slug": slug.current, description, \
+        "setupCount": count(*[_type=="setup" && \(notDraft) && references(^._id)])} \
+        | order(title asc)
+        """
+
+    /// Every published setup's gear names and categories (~420 KB), fetched
+    /// once for the client-side most-featured-gear aggregation.
+    static let allGear = "*[_type==\"setup\" && \(notDraft)]{gear[]{name, category}}"
 
     /// Escapes a value for interpolation inside a double-quoted GROQ string literal.
     private static func escape(_ value: String) -> String {

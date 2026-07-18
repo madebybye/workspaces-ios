@@ -13,15 +13,19 @@ struct WorkspacesApp: App {
 struct RootView: View {
     enum Section {
         case latest
+        case saved
         case index
     }
 
     @State private var section: Section = .latest
-    @State private var path: [SetupSummary] = []
+    @State private var path = NavigationPath()
 
     // Stores live here so state survives switching sections.
     @State private var feed = FeedStore()
+    @State private var savedStore = SavedStore()
     @State private var tagStore = TagStore()
+    @State private var collectionStore = CollectionStore()
+    @State private var gearIndex = GearIndexStore()
     @State private var results = FeedStore()
     @State private var searchText = ""
     @State private var selectedTag: Tag?
@@ -34,9 +38,13 @@ struct RootView: View {
                 switch section {
                 case .latest:
                     FeedView(store: feed)
+                case .saved:
+                    SavedView(store: savedStore)
                 case .index:
                     IndexView(
                         tagStore: tagStore,
+                        collectionStore: collectionStore,
+                        gearIndex: gearIndex,
                         results: results,
                         searchText: $searchText,
                         selectedTag: $selectedTag
@@ -46,7 +54,13 @@ struct RootView: View {
             .background(Color.paper)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: SetupSummary.self) { setup in
-                SetupDetailView(summary: setup)
+                SetupDetailView(summary: setup, saved: savedStore)
+            }
+            .navigationDestination(for: GearRef.self) { gear in
+                GearResultsView(gear: gear)
+            }
+            .navigationDestination(for: SetupCollection.self) { collection in
+                CollectionResultsView(collection: collection)
             }
         }
         .tint(.primary)
@@ -75,6 +89,7 @@ private struct Masthead: View {
 
             HStack(spacing: 28) {
                 sectionButton("Latest", .latest)
+                sectionButton("Saved", .saved)
                 sectionButton("Index", .index)
                 Spacer()
             }

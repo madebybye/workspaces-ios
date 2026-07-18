@@ -4,10 +4,12 @@ import SwiftUI
 /// sections with tracked-uppercase headers.
 struct SetupDetailView: View {
     let summary: SetupSummary
+    let saved: SavedStore
     @State private var store: DetailStore
 
-    init(summary: SetupSummary) {
+    init(summary: SetupSummary, saved: SavedStore) {
         self.summary = summary
+        self.saved = saved
         _store = State(initialValue: DetailStore(slug: summary.slug))
     }
 
@@ -31,7 +33,17 @@ struct SetupDetailView: View {
             ToolbarItem(placement: .principal) {
                 Kicker("Issue \(summary.issueNumber)", size: 11, color: .primary)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    saved.toggle(summary)
+                } label: {
+                    Image(systemName: saved.isSaved(summary.slug) ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 15, weight: .light))
+                }
+                .accessibilityLabel(
+                    saved.isSaved(summary.slug) ? "Remove from saved" : "Save this setup"
+                )
+
                 ShareLink(item: URL(string: "https://workspaces.xyz/p/\(summary.slug)")!) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 15, weight: .light))
@@ -200,41 +212,58 @@ private struct GearSection: View {
     }
 }
 
+/// One gear line with two distinct affordances: the name (with a quiet
+/// chevron) browses other setups featuring this item in-app; the trailing
+/// underlined "SHOP ↗" opens the affiliate link externally.
 private struct GearRow: View {
     let item: GearItem
 
-    var body: some View {
-        Group {
-            if let url = item.affiliateUrl {
-                Link(destination: url) { rowContent(linked: true) }
-                    .buttonStyle(.plain)
-            } else {
-                rowContent(linked: false)
-            }
-        }
+    private var name: String {
+        item.name.trimmingCharacters(in: .whitespaces)
     }
 
-    private func rowContent(linked: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name.trimmingCharacters(in: .whitespaces))
-                    .font(.system(size: 16, design: .serif))
-                    .multilineTextAlignment(.leading)
-                if let description = item.description, !description.isEmpty {
-                    Text(description)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            NavigationLink(value: GearRef(name: name)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(name)
+                            .font(.system(size: 16, design: .serif))
+                            .multilineTextAlignment(.leading)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if let description = item.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
-            if linked {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows other setups featuring this gear")
+
+            if let url = item.affiliateUrl {
+                Link(destination: url) {
+                    HStack(spacing: 3) {
+                        Text("SHOP")
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(1.4)
+                            .underline()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Shop \(name)")
             }
         }
         .padding(.vertical, 9)
-        .contentShape(Rectangle())
     }
 }
 

@@ -19,6 +19,8 @@ final class FeedStore {
 
     var tagSlug: String?
     var search: String?
+    var gearName: String?
+    var collectionId: String?
 
     private let client = SanityClient.shared
     private var loadTask: Task<Void, Never>?
@@ -26,7 +28,7 @@ final class FeedStore {
     /// True for the unfiltered front-of-book feed, the only configuration the
     /// disk cache serves and persists.
     private var isUnfiltered: Bool {
-        tagSlug == nil && (search ?? "").isEmpty
+        tagSlug == nil && (search ?? "").isEmpty && gearName == nil && collectionId == nil
     }
 
     func loadInitial() async {
@@ -51,9 +53,12 @@ final class FeedStore {
     func reload(showSpinner: Bool, forceFresh: Bool = false) async {
         loadTask?.cancel()
         if showSpinner { phase = .loading }
-        let task = Task { [tagSlug, search] in
+        let task = Task { [tagSlug, search, gearName, collectionId] in
             do {
-                let query = GROQ.setups(offset: 0, tagSlug: tagSlug, search: search)
+                let query = GROQ.setups(
+                    offset: 0, tagSlug: tagSlug, search: search,
+                    gearName: gearName, collectionId: collectionId
+                )
                 let page = try await client.fetch([SetupSummary].self, query: query, forceFresh: forceFresh)
                 guard !Task.isCancelled else { return }
                 setups = page
@@ -79,10 +84,13 @@ final class FeedStore {
         guard let index = setups.firstIndex(of: setup), index >= threshold else { return }
 
         isLoadingMore = true
-        Task { [tagSlug, search] in
+        Task { [tagSlug, search, gearName, collectionId] in
             defer { isLoadingMore = false }
             do {
-                let query = GROQ.setups(offset: setups.count, tagSlug: tagSlug, search: search)
+                let query = GROQ.setups(
+                    offset: setups.count, tagSlug: tagSlug, search: search,
+                    gearName: gearName, collectionId: collectionId
+                )
                 let page = try await client.fetch([SetupSummary].self, query: query)
                 let existing = Set(setups.map(\.slug))
                 setups.append(contentsOf: page.filter { !existing.contains($0.slug) })

@@ -46,6 +46,35 @@ struct SetupSummary: Codable, Identifiable, Hashable {
     var id: String { slug }
 }
 
+// MARK: - Browse dimensions
+
+/// A navigation value for browsing setups by a piece of gear.
+struct GearRef: Hashable {
+    let name: String
+}
+
+/// One row of the most-featured gear index: a display name (first spelling
+/// seen), its category, and how many setups feature it. Codable so the
+/// aggregation round-trips through its disk cache.
+struct GearIndexEntry: Codable, Identifiable, Hashable {
+    let name: String
+    var category: String?
+    let setupCount: Int
+
+    var id: String { name.lowercased() }
+}
+
+/// A curated collection document, e.g. { title: "IKEA", slug: "ikea" }.
+/// `id` is the Sanity `_id`, which setups reference in their `collections`
+/// field; `setupCount` is computed server-side in the projection.
+struct SetupCollection: Codable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let slug: String
+    var description: String?
+    var setupCount: Int?
+}
+
 // MARK: - Detail
 
 /// Codable (not just Decodable) so it can round-trip through the detail disk
