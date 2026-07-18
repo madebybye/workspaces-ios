@@ -60,6 +60,7 @@ final class FeedStore {
                 reachedEnd = page.count < GROQ.pageSize
                 phase = page.isEmpty ? .empty : .loaded
                 persistCacheIfNeeded()
+                prefetchLeadDetailIfNeeded()
             } catch is CancellationError {
             } catch {
                 guard !Task.isCancelled else { return }
@@ -98,5 +99,22 @@ final class FeedStore {
     private func persistCacheIfNeeded() {
         guard isUnfiltered else { return }
         FeedCache.save(setups)
+    }
+
+    private var prefetchedLeadSlug: String?
+
+    /// Warms the detail cache for the newest issue so the lead story opens
+    /// instantly. Fire-and-forget at low priority; failures are silent.
+    private func prefetchLeadDetailIfNeeded() {
+        guard isUnfiltered, let lead = setups.first, lead.slug != prefetchedLeadSlug else { return }
+        prefetchedLeadSlug = lead.slug
+        let slug = lead.slug
+        Task.detached(priority: .utility) {
+            guard let detail = try? await SanityClient.shared.fetch(
+                SetupDetail?.self,
+                query: GROQ.setupDetail(slug: slug)
+            ) else { return }
+            DetailCache.save(detail)
+        }
     }
 }

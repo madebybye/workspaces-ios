@@ -55,10 +55,7 @@ private struct DetailContent: View {
                     header
 
                     if let bio = detail.guestBio, !bio.isEmpty {
-                        Text(bio.text)
-                            .font(.system(size: 15, design: .serif))
-                            .lineSpacing(5.5)
-                            .foregroundStyle(.primary.opacity(0.88))
+                        RichBodyText(content: bio)
                     }
 
                     if let links = detail.guestLinks, !links.isEmpty {
@@ -241,6 +238,60 @@ private struct GearRow: View {
     }
 }
 
+/// Portable Text body copy in the editorial serif style: one `Text` per
+/// paragraph with bold/italic rendered via font traits and links tappable
+/// and underlined. Unknown marks and block types degrade to plain text.
+private struct RichBodyText: View {
+    let content: PortableText
+    var size: CGFloat = 15
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                Text(paragraph)
+                    .font(.system(size: size, design: .serif))
+                    .lineSpacing(5.5)
+                    .foregroundStyle(.primary.opacity(0.88))
+            }
+        }
+    }
+
+    private var paragraphs: [AttributedString] {
+        content.blocks.compactMap { attributedParagraph(for: $0) }
+    }
+
+    private func attributedParagraph(for block: PortableText.Block) -> AttributedString? {
+        var paragraph = AttributedString()
+        for span in block.children ?? [] {
+            guard let text = span.text, !text.isEmpty else { continue }
+            var run = AttributedString(text)
+
+            var bold = false
+            var italic = false
+            for mark in span.marks ?? [] {
+                // Unresolvable marks return nil and the run stays plain.
+                switch block.resolve(mark: mark) {
+                case .bold: bold = true
+                case .italic: italic = true
+                case .underline: run.underlineStyle = .single
+                case .link(let url):
+                    run.link = url
+                    run.underlineStyle = .single
+                case nil: break
+                }
+            }
+            if bold || italic {
+                var font: Font = .system(size: size, design: .serif)
+                if bold { font = font.bold() }
+                if italic { font = font.italic() }
+                run.font = font
+            }
+            paragraph.append(run)
+        }
+        return paragraph.characters.isEmpty ? nil : paragraph
+    }
+}
+
 /// Q&A: serif bold-italic questions, serif answers.
 private struct QASection: View {
     let items: [QAItem]
@@ -256,10 +307,7 @@ private struct QASection: View {
                         .italic()
                         .lineSpacing(3)
                     if let answer = item.answer, !answer.isEmpty {
-                        Text(answer.text)
-                            .font(.system(size: 15, design: .serif))
-                            .lineSpacing(5.5)
-                            .foregroundStyle(.primary.opacity(0.88))
+                        RichBodyText(content: answer)
                     }
                 }
             }
