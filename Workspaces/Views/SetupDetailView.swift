@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// A feature spread: full-bleed gallery, serif headline, hairline-ruled
+/// sections with tracked-uppercase headers.
 struct SetupDetailView: View {
     let summary: SetupSummary
     @State private var store: DetailStore
@@ -23,12 +25,16 @@ struct SetupDetailView: View {
                 DetailContent(detail: detail)
             }
         }
-        .navigationTitle("Issue \(summary.issueNumber)")
+        .background(Color.paper)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Kicker("Issue \(summary.issueNumber)", size: 11, color: .primary)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: URL(string: "https://workspaces.xyz/p/\(summary.slug)")!) {
                     Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 15, weight: .light))
                 }
                 .accessibilityLabel("Share this setup")
             }
@@ -45,83 +51,93 @@ private struct DetailContent: View {
             VStack(alignment: .leading, spacing: 0) {
                 PhotoGallery(photos: detail.photos ?? [])
 
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 32) {
                     header
+
                     if let bio = detail.guestBio, !bio.isEmpty {
                         Text(bio.text)
-                            .font(.callout)
-                            .lineSpacing(4)
-                            .foregroundStyle(.primary.opacity(0.85))
+                            .font(.system(size: 15, design: .serif))
+                            .lineSpacing(5.5)
+                            .foregroundStyle(.primary.opacity(0.88))
                     }
+
                     if let links = detail.guestLinks, !links.isEmpty {
                         linksRow(links)
                     }
+
                     if let gear = detail.gear, !gear.isEmpty {
                         GearSection(gear: gear)
                     }
+
                     if let qa = detail.qa, !qa.isEmpty {
                         QASection(items: qa)
                     }
+
+                    footer
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 48)
+                .padding(.top, 26)
+                .padding(.bottom, 56)
             }
         }
-        .ignoresSafeArea(edges: .horizontal)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Issue \(detail.issueNumber)")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.8)
-                if let date = detail.publishedAt {
-                    Text("·")
-                    Text(date, format: .dateTime.day().month(.wide).year())
-                        .font(.caption)
-                }
-            }
-            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            Kicker(kickerLine)
 
             Text(detail.guestName)
-                .font(.title.weight(.bold))
+                .font(.system(size: 34, weight: .bold, design: .serif))
+                .lineSpacing(2)
 
             if let title = detail.guestTitle, !title.isEmpty {
                 Text(title)
-                    .font(.subheadline)
+                    .font(.system(size: 16, design: .serif))
+                    .italic()
                     .foregroundStyle(.secondary)
-            }
-
-            if let location = detail.guestLocation?.trimmingCharacters(in: .whitespaces), !location.isEmpty {
-                Label(location, systemImage: "mappin.and.ellipse")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+                    .lineSpacing(3)
             }
         }
     }
 
+    private var kickerLine: String {
+        var parts = ["Issue \(detail.issueNumber)"]
+        if let date = detail.publishedAt { parts.append(date.dateline) }
+        if let location = detail.guestLocation?.trimmingCharacters(in: .whitespaces), !location.isEmpty {
+            parts.append(location)
+        }
+        return parts.joined(separator: "  ·  ")
+    }
+
     private func linksRow(_ links: [GuestLink]) -> some View {
-        FlowLayout(spacing: 8) {
+        FlowLayout(spacing: 20) {
             ForEach(links) { link in
                 Link(destination: link.url) {
-                    Label(link.platform ?? link.url.host() ?? "Link", systemImage: "arrow.up.right")
-                        .font(.footnote.weight(.medium))
-                        .labelStyle(TrailingIconLabelStyle())
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Color(.secondarySystemBackground), in: Capsule())
+                    HStack(spacing: 4) {
+                        Text((link.platform ?? link.url.host() ?? "Link").uppercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .kerning(1.5)
+                            .underline()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
             }
         }
     }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Hairline()
+            Kicker("workspaces.xyz  ·  Issue \(detail.issueNumber)", size: 9, color: .tertiary)
+        }
+        .padding(.top, 8)
+    }
 }
 
-/// Horizontally paged photo gallery.
+/// Horizontally paged, full-bleed photo gallery.
 private struct PhotoGallery: View {
     let photos: [Photo]
     @State private var page = 0
@@ -131,10 +147,12 @@ private struct PhotoGallery: View {
             RemoteImage(url: nil)
                 .aspectRatio(4 / 3, contentMode: .fit)
         } else {
-            VStack(spacing: 10) {
+            VStack(alignment: .trailing, spacing: 8) {
                 TabView(selection: $page) {
                     ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
-                        RemoteImage(url: photo.url(width: 1200))
+                        Color.clear
+                            .overlay { RemoteImage(url: photo.url(width: 1200)) }
+                            .clipped()
                             .accessibilityLabel(photo.alt ?? "Workspace photo \(index + 1)")
                             .tag(index)
                     }
@@ -144,17 +162,16 @@ private struct PhotoGallery: View {
                 .clipped()
 
                 if photos.count > 1 {
-                    Text("\(page + 1) / \(photos.count)")
-                        .font(.caption2.weight(.medium))
+                    Kicker("Fig. \(page + 1) / \(photos.count)", size: 9, color: .tertiary)
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .padding(.trailing, 20)
                 }
             }
         }
     }
 }
 
-/// Gear list grouped by category.
+/// Gear grouped by category, text-first with hairline rules.
 private struct GearSection: View {
     let gear: [GearItem]
 
@@ -166,27 +183,20 @@ private struct GearSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SectionHeading("Gear")
+        VStack(alignment: .leading, spacing: 22) {
+            SectionHeader("Gear")
 
             ForEach(groups, id: \.category) { group in
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(group.category)
-                        .font(.caption.weight(.semibold))
-                        .textCase(.uppercase)
-                        .kerning(0.8)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    Kicker(group.category, size: 9, color: .tertiary)
+                        .padding(.bottom, 8)
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(group.items) { item in
-                            GearRow(item: item)
-                            if item.id != group.items.last?.id {
-                                Divider()
-                            }
+                    ForEach(group.items) { item in
+                        GearRow(item: item)
+                        if item.id != group.items.last?.id {
+                            Hairline(opacity: 0.1)
                         }
                     }
-                    .background(Color(.secondarySystemBackground).opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
         }
@@ -208,77 +218,51 @@ private struct GearRow: View {
     }
 
     private func rowContent(linked: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name.trimmingCharacters(in: .whitespaces))
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 16, design: .serif))
                     .multilineTextAlignment(.leading)
                 if let description = item.description, !description.isEmpty {
                     Text(description)
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
             if linked {
                 Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 9)
         .contentShape(Rectangle())
     }
 }
 
-/// Q&A rendered from flattened portable text.
+/// Q&A: serif bold-italic questions, serif answers.
 private struct QASection: View {
     let items: [QAItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            SectionHeading("Q & A")
+        VStack(alignment: .leading, spacing: 26) {
+            SectionHeader("Q & A")
 
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.question)
-                        .font(.headline)
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .italic()
+                        .lineSpacing(3)
                     if let answer = item.answer, !answer.isEmpty {
                         Text(answer.text)
-                            .font(.callout)
-                            .lineSpacing(4)
-                            .foregroundStyle(.primary.opacity(0.85))
+                            .font(.system(size: 15, design: .serif))
+                            .lineSpacing(5.5)
+                            .foregroundStyle(.primary.opacity(0.88))
                     }
                 }
             }
-        }
-    }
-}
-
-private struct SectionHeading: View {
-    let title: String
-
-    init(_ title: String) {
-        self.title = title
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Divider()
-            Text(title)
-                .font(.title3.weight(.semibold))
-        }
-    }
-}
-
-private struct TrailingIconLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 5) {
-            configuration.title
-            configuration.icon
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
         }
     }
 }

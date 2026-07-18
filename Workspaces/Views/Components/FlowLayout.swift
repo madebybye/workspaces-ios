@@ -55,21 +55,3 @@ struct FlowLayout: Layout {
         return rows
     }
 }
-
-/// A monochrome tag chip.
-struct TagChip: View {
-    let name: String
-    var isSelected = false
-
-    var body: some View {
-        Text(name)
-            .font(.caption.weight(.medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(Color(.secondarySystemBackground)),
-                in: Capsule()
-            )
-            .foregroundStyle(isSelected ? AnyShapeStyle(Color(.systemBackground)) : AnyShapeStyle(.primary))
-    }
-}

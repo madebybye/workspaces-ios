@@ -18,7 +18,7 @@ struct RemoteImage: View {
                     .transition(.opacity)
             } else {
                 Rectangle()
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(.primary.opacity(0.05))
                     .overlay {
                         if failed {
                             Image(systemName: "photo")
@@ -87,12 +87,21 @@ final class ImageLoader: @unchecked Sendable {
     func image(for url: URL) async throws -> UIImage {
         if let cached = cachedImage(for: url) { return cached }
 
+        let task = loadTask(for: url)
+        defer { clearTask(for: url) }
+
+        let image = try await task.value
+        cache.setObject(image, forKey: url as NSURL, cost: data(of: image))
+        return image
+    }
+
+    /// Returns the in-flight task for this URL, creating one if needed.
+    /// Synchronous so locking stays out of async contexts.
+    private func loadTask(for url: URL) -> Task<UIImage, Error> {
         lock.lock()
-        if let existing = inFlight[url] {
-            lock.unlock()
-            return try await existing.value
-        }
-        let task = Task<UIImage, Error> {
+        defer { lock.unlock() }
+        if let existing = inFlight[url] { return existing }
+        let task = Task<UIImage, Error> { [session] in
             let (data, _) = try await session.data(from: url)
             guard let image = UIImage(data: data) else {
                 throw URLError(.cannotDecodeContentData)
@@ -100,17 +109,13 @@ final class ImageLoader: @unchecked Sendable {
             return image
         }
         inFlight[url] = task
-        lock.unlock()
+        return task
+    }
 
-        defer {
-            lock.lock()
-            inFlight[url] = nil
-            lock.unlock()
-        }
-
-        let image = try await task.value
-        cache.setObject(image, forKey: url as NSURL, cost: data(of: image))
-        return image
+    private func clearTask(for url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        inFlight[url] = nil
     }
 
     private func data(of image: UIImage) -> Int {

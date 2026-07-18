@@ -6,15 +6,21 @@ photo galleries, read guest bios and Q&As, and explore the gear behind each setu
 
 ## Features
 
-- **Feed** — an infinite-scrolling list of setups (hero photo, issue number, guest,
-  location, tags) with pull-to-refresh.
-- **Detail** — a horizontally paged photo gallery, guest bio and links, gear grouped
-  by category (tap items with affiliate links to open them), Q&A, and a share button
-  linking to `https://workspaces.xyz/p/{slug}`.
-- **Explore** — browse all tags as a chip cloud, filter the feed by tag, and search
-  guests by name (GROQ `match`).
+The UI is deliberately editorial — serif display type, hairline rules, full-bleed
+photography, and a magazine masthead instead of stock iOS chrome.
 
-Dark-mode friendly, no third-party dependencies, async/await throughout.
+- **Latest** — the front-of-book feed: a full-bleed lead story, then entries
+  alternating between full-width and split layouts (with oversized issue
+  numerals), infinite scroll and pull-to-refresh.
+- **Detail** — a feature spread: paged full-bleed gallery ("FIG. 1 / 6"), serif
+  headline with kicker, guest bio and links, gear grouped by category (items with
+  affiliate links open in Safari), Q&A, and a share button linking to
+  `https://workspaces.xyz/p/{slug}`.
+- **Index** — the back-of-book: a typographic two-column tag index, tag
+  filtering, and guest-name search (GROQ `match`) with compact result rows.
+
+Dark-mode friendly (paper white inverts to near-black), no third-party
+dependencies, async/await throughout.
 
 ## Data source
 
@@ -57,11 +63,11 @@ xcodebuild -project Workspaces.xcodeproj -scheme Workspaces \
 
 ```
 Workspaces/
-├── WorkspacesApp.swift        # App entry, tab root
+├── WorkspacesApp.swift        # App entry, masthead + Latest/Index switcher
 ├── Models/Models.swift        # Setup, Tag, Photo, Gear, QA, PortableText decoder
 ├── Networking/SanityClient.swift  # GROQ URL building + envelope decoding
 ├── Stores/                    # @Observable stores (feed w/ pagination, detail, tags)
-└── Views/                     # Feed, Detail, Explore + shared components
+└── Views/                     # Feed, Detail, Index + typography/image components
 ```
 
 This is a prototype; there is no offline persistence beyond the URL/image caches.
