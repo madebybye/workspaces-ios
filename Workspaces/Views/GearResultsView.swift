@@ -20,8 +20,9 @@ struct GearResultsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Kicker("Featuring", size: 10, color: .tertiary)
                 Text(gear.name)
-                    .font(.system(size: 26, weight: .bold, design: .serif))
+                    .scaledFont(size: 26, weight: .bold, design: .serif, relativeTo: .title2)
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Hairline()
                     .padding(.top, 8)
             }

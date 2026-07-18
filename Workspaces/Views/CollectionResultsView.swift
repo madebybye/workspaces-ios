@@ -19,14 +19,16 @@ struct CollectionResultsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Kicker("Collection", size: 10, color: .tertiary)
                 Text(collection.title)
-                    .font(.system(size: 26, weight: .bold, design: .serif))
+                    .scaledFont(size: 26, weight: .bold, design: .serif, relativeTo: .title2)
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let description = collection.description, !description.isEmpty {
                     Text(description)
-                        .font(.system(size: 14, design: .serif))
+                        .scaledFont(size: 14, design: .serif, relativeTo: .footnote)
                         .italic()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.inkSecondary)
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Hairline()
                     .padding(.top, 8)

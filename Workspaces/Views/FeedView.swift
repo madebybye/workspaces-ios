@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// The front-of-book feed: a full-bleed lead story followed by entries that
-/// alternate between full-width and split layouts, separated by hairlines.
+/// The front-of-book feed. On compact width (iPhone): a full-bleed lead story
+/// followed by entries that alternate between full-width and split layouts,
+/// separated by hairlines. On regular width (iPad): the lead story spans the
+/// full width and subsequent entries flow into a two-column magazine grid.
 struct FeedView: View {
     let store: FeedStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         Group {
@@ -22,11 +25,17 @@ struct FeedView: View {
                     description: Text("Check back soon for new workspaces.")
                 )
             case .loaded:
-                feedList
+                if horizontalSizeClass == .regular {
+                    feedGrid
+                } else {
+                    feedList
+                }
             }
         }
         .task { await store.loadInitial() }
     }
+
+    // MARK: Compact (iPhone) — unchanged single column
 
     private var feedList: some View {
         ScrollView {
@@ -61,9 +70,60 @@ struct FeedView: View {
         if index == 0 { return .lead }
         return index.isMultiple(of: 2) ? .split : .full
     }
+
+    // MARK: Regular (iPad) — lead + two-column magazine grid
+
+    private var feedGrid: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if let lead = store.setups.first {
+                    NavigationLink(value: lead) {
+                        FeedEntry(setup: lead, style: .lead)
+                    }
+                    .buttonStyle(.plain)
+                    .onAppear { store.loadMoreIfNeeded(current: lead) }
+
+                    Hairline()
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 40)
+                }
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 36, alignment: .top),
+                        GridItem(.flexible(), alignment: .top),
+                    ],
+                    alignment: .leading,
+                    spacing: 44
+                ) {
+                    ForEach(store.setups.dropFirst()) { setup in
+                        NavigationLink(value: setup) {
+                            FeedEntry(setup: setup, style: .full)
+                        }
+                        .buttonStyle(.plain)
+                        .onAppear { store.loadMoreIfNeeded(current: setup) }
+                    }
+                }
+                .padding(.horizontal, 24)
+
+                if store.isLoadingMore {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                }
+            }
+            .padding(.top, 24)
+            .padding(.bottom, 56)
+        }
+        .refreshable { await store.refresh() }
+    }
 }
 
-/// One feed entry in one of three editorial layouts.
+/// One feed entry in one of three editorial layouts. Reads as a single
+/// VoiceOver element ("Issue 536, Zack Davenport, Founding Product and Brand
+/// Designer, New York") instead of fragmenting into kicker/name/dek/tags.
+/// At accessibility text sizes the split layout falls back to the full-width
+/// layout so the two-column row never overlaps.
 struct FeedEntry: View {
     enum Style {
         case lead   // oversized: full-bleed photo, headline-scale name
@@ -73,13 +133,23 @@ struct FeedEntry: View {
 
     let setup: SetupSummary
     var style: Style = .full
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        switch style {
-        case .lead: leadLayout
-        case .full: fullLayout
-        case .split: splitLayout
+        Group {
+            switch style {
+            case .lead: leadLayout
+            case .full: fullLayout
+            case .split:
+                if dynamicTypeSize.isAccessibilitySize {
+                    fullLayout
+                } else {
+                    splitLayout
+                }
+            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(setup.accessibilitySummary)
     }
 
     // MARK: Lead story
@@ -95,15 +165,17 @@ struct FeedEntry: View {
                     .padding(.top, 18)
 
                 Text(setup.guestName)
-                    .font(.system(size: 36, weight: .bold, design: .serif))
+                    .scaledFont(size: 36, weight: .bold, design: .serif, relativeTo: .largeTitle)
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let title = setup.guestTitle, !title.isEmpty {
                     Text(title)
-                        .font(.system(size: 17, design: .serif))
+                        .scaledFont(size: 17, design: .serif, relativeTo: .body)
                         .italic()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.inkSecondary)
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let tagLine = setup.tagLine {
@@ -129,14 +201,16 @@ struct FeedEntry: View {
                     .padding(.top, 16)
 
                 Text(setup.guestName)
-                    .font(.system(size: 25, weight: .semibold, design: .serif))
+                    .scaledFont(size: 25, weight: .semibold, design: .serif, relativeTo: .title2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let title = setup.guestTitle, !title.isEmpty {
                     Text(title)
-                        .font(.system(size: 15, design: .serif))
+                        .scaledFont(size: 15, design: .serif, relativeTo: .subheadline)
                         .italic()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.inkSecondary)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let tagLine = setup.tagLine {
@@ -155,7 +229,7 @@ struct FeedEntry: View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(setup.issueNumber)")
-                    .font(.system(size: 64, weight: .thin, design: .serif))
+                    .scaledFont(size: 64, weight: .thin, design: .serif, relativeTo: .largeTitle)
                     .foregroundStyle(.primary.opacity(0.35))
                     .padding(.bottom, 2)
 
@@ -164,15 +238,17 @@ struct FeedEntry: View {
                 }
 
                 Text(setup.guestName)
-                    .font(.system(size: 21, weight: .semibold, design: .serif))
+                    .scaledFont(size: 21, weight: .semibold, design: .serif, relativeTo: .title3)
                     .lineSpacing(1)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let title = setup.guestTitle, !title.isEmpty {
                     Text(title)
-                        .font(.system(size: 14, design: .serif))
+                        .scaledFont(size: 14, design: .serif, relativeTo: .footnote)
                         .italic()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.inkSecondary)
                         .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let tagLine = setup.tagLine {
@@ -206,15 +282,15 @@ struct ErrorStateView: View {
         VStack(spacing: 16) {
             Kicker("Something went wrong")
             Text(message)
-                .font(.system(size: 15, design: .serif))
+                .scaledFont(size: 15, design: .serif, relativeTo: .subheadline)
                 .italic()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.inkSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task { await retry() }
             } label: {
                 Text("TRY AGAIN")
-                    .font(.system(size: 12, weight: .bold))
+                    .scaledFont(size: 12, weight: .bold, relativeTo: .footnote)
                     .kerning(1.8)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)

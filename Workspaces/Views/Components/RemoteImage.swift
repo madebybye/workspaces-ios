@@ -8,6 +8,7 @@ struct RemoteImage: View {
 
     @State private var image: UIImage?
     @State private var failed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -32,7 +33,7 @@ struct RemoteImage: View {
                     }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: image != nil)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: image != nil)
         .task(id: url) {
             await load()
         }

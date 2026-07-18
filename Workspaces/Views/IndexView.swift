@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The back-of-book index: minimal search, then TAGS / COLLECTIONS / GEAR as
 /// hairline-ruled typographic sections, and compact result rows when
-/// filtering.
+/// filtering. On regular width (iPad) the browse sections flow into two
+/// columns; at accessibility text sizes the tag grid collapses to one column.
 struct IndexView: View {
     let tagStore: TagStore
     let collectionStore: CollectionStore
@@ -10,6 +11,9 @@ struct IndexView: View {
     let results: FeedStore
     @Binding var searchText: String
     @Binding var selectedTag: Tag?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .footnote) private var promptSize: CGFloat = 12
 
     private var isFiltering: Bool {
         selectedTag != nil || !searchText.trimmingCharacters(in: .whitespaces).isEmpty
@@ -51,24 +55,26 @@ struct IndexView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
                 TextField(
                     "",
                     text: $searchText,
                     prompt: Text("SEARCH BY GUEST NAME")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: promptSize, weight: .medium))
                         .kerning(1.5)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.inkTertiary)
                 )
-                .font(.system(size: 15, design: .serif))
+                .scaledFont(size: 15, design: .serif, relativeTo: .body)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .accessibilityLabel("Search by guest name")
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.inkSecondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -85,19 +91,52 @@ struct IndexView: View {
 
     private var browseIndex: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 40) {
-                tagsSection
-                collectionsSection
-                gearSection
+            Group {
+                if horizontalSizeClass == .regular {
+                    HStack(alignment: .top, spacing: 48) {
+                        tagsSection
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        VStack(alignment: .leading, spacing: 40) {
+                            collectionsSection
+                            gearSection
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 40) {
+                        tagsSection
+                        collectionsSection
+                        gearSection
+                    }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 48)
+
+            colophon
+                .padding(.horizontal, 20)
+                .padding(.top, 48)
+                .padding(.bottom, 48)
         }
         .refreshable {
             await gearIndex.refresh()
             await collectionStore.load(forceFresh: true)
         }
+    }
+
+    /// Unobtrusive colophon: unofficial-companion note and the affiliate
+    /// disclosure App Store review expects.
+    private var colophon: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Hairline()
+            Kicker("About", size: 9, color: .tertiary)
+            Text("An unofficial companion to workspaces.xyz. Gear links may be affiliate links.")
+                .scaledFont(size: 12, design: .serif, relativeTo: .caption)
+                .italic()
+                .foregroundStyle(Color.inkSecondary)
+                .lineSpacing(3)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Compact inline retry line for a failed section, so one dead section
@@ -107,9 +146,9 @@ struct IndexView: View {
             Task { await retry() }
         } label: {
             Text("Couldn't load — tap to retry.")
-                .font(.system(size: 14, design: .serif))
+                .scaledFont(size: 14, design: .serif, relativeTo: .footnote)
                 .italic()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.inkSecondary)
         }
         .buttonStyle(.plain)
         .padding(.vertical, 8)
@@ -123,6 +162,14 @@ struct IndexView: View {
 
     // MARK: Tags
 
+    private var tagColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            [GridItem(.flexible())]
+        } else {
+            [GridItem(.flexible(), spacing: 24), GridItem(.flexible())]
+        }
+    }
+
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader("Tags")
@@ -133,18 +180,14 @@ struct IndexView: View {
             case .failed:
                 sectionRetry { await tagStore.load() }
             case .loaded:
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible())],
-                    alignment: .leading,
-                    spacing: 0
-                ) {
+                LazyVGrid(columns: tagColumns, alignment: .leading, spacing: 0) {
                     ForEach(tagStore.tags) { tag in
                         Button {
                             selectedTag = tag
                         } label: {
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(tag.name.uppercased())
-                                    .font(.system(size: 12, weight: .medium))
+                                    .scaledFont(size: 12, weight: .medium, relativeTo: .footnote)
                                     .kerning(1.5)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
@@ -154,6 +197,8 @@ struct IndexView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("\(tag.name), tag")
+                        .accessibilityHint("Shows setups filed under this tag")
                     }
                 }
             }
@@ -179,7 +224,7 @@ struct IndexView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                                         Text(collection.title.uppercased())
-                                            .font(.system(size: 12, weight: .medium))
+                                            .scaledFont(size: 12, weight: .medium, relativeTo: .footnote)
                                             .kerning(1.5)
                                         Spacer()
                                         if let count = collection.setupCount, count > 0 {
@@ -189,9 +234,9 @@ struct IndexView: View {
                                     }
                                     if let description = collection.description, !description.isEmpty {
                                         Text(description)
-                                            .font(.system(size: 13, design: .serif))
+                                            .scaledFont(size: 13, design: .serif, relativeTo: .footnote)
                                             .italic()
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color.inkSecondary)
                                             .lineLimit(2)
                                             .multilineTextAlignment(.leading)
                                     }
@@ -203,10 +248,23 @@ struct IndexView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(collectionLabel(collection))
                     }
                 }
             }
         }
+    }
+
+    private func collectionLabel(_ collection: SetupCollection) -> String {
+        var parts = ["\(collection.title), collection"]
+        if let count = collection.setupCount, count > 0 {
+            parts.append("\(count) \(count == 1 ? "setup" : "setups")")
+        }
+        if let description = collection.description, !description.isEmpty {
+            parts.append(description)
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: Gear
@@ -231,7 +289,7 @@ struct IndexView: View {
                             VStack(spacing: 0) {
                                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                                     Text(entry.name.uppercased())
-                                        .font(.system(size: 12, weight: .medium))
+                                        .scaledFont(size: 12, weight: .medium, relativeTo: .footnote)
                                         .kerning(1.5)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.8)
@@ -249,6 +307,10 @@ struct IndexView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(entry.name), featured in \(entry.setupCount) \(entry.setupCount == 1 ? "setup" : "setups")"
+                        )
                     }
                 }
             }
@@ -267,7 +329,7 @@ struct IndexView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.inkSecondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear tag filter \(tag.name)")
@@ -300,9 +362,9 @@ struct SetupResultsList: View {
             VStack(spacing: 12) {
                 Kicker("No results")
                 Text(emptyText)
-                    .font(.system(size: 15, design: .serif))
+                    .scaledFont(size: 15, design: .serif, relativeTo: .subheadline)
                     .italic()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.inkSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loaded:
@@ -333,7 +395,8 @@ struct SetupResultsList: View {
 }
 
 /// A compact, text-led result row with a small square thumbnail. Shared by
-/// the index results, gear/collection results, and the SAVED list.
+/// the index results, gear/collection results, and the SAVED list. Reads as
+/// one VoiceOver element per setup.
 struct IndexResultRow: View {
     let setup: SetupSummary
 
@@ -343,14 +406,15 @@ struct IndexResultRow: View {
                 Kicker("Issue \(setup.issueNumber)", size: 9, color: .tertiary)
 
                 Text(setup.guestName)
-                    .font(.system(size: 19, weight: .semibold, design: .serif))
+                    .scaledFont(size: 19, weight: .semibold, design: .serif, relativeTo: .title3)
 
                 if let title = setup.guestTitle, !title.isEmpty {
                     Text(title)
-                        .font(.system(size: 13, design: .serif))
+                        .scaledFont(size: 13, design: .serif, relativeTo: .footnote)
                         .italic()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.inkSecondary)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -363,5 +427,7 @@ struct IndexResultRow: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(setup.accessibilitySummary)
     }
 }

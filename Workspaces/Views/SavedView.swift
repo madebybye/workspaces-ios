@@ -10,9 +10,9 @@ struct SavedView: View {
             VStack(spacing: 12) {
                 Kicker("Saved")
                 Text("Nothing saved yet.")
-                    .font(.system(size: 15, design: .serif))
+                    .scaledFont(size: 15, design: .serif, relativeTo: .subheadline)
                     .italic()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.inkSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

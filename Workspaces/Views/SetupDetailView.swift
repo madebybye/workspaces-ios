@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// A feature spread: full-bleed gallery, serif headline, hairline-ruled
-/// sections with tracked-uppercase headers.
+/// sections with tracked-uppercase headers. On wide layouts (iPad) the text
+/// column is capped at a readable ~700pt and centered while the gallery
+/// stays full-bleed.
 struct SetupDetailView: View {
     let summary: SetupSummary
     let saved: SavedStore
@@ -41,7 +43,7 @@ struct SetupDetailView: View {
                         .font(.system(size: 15, weight: .light))
                 }
                 .accessibilityLabel(
-                    saved.isSaved(summary.slug) ? "Remove from saved" : "Save this setup"
+                    saved.isSaved(summary.slug) ? "Remove from saved" : "Save setup"
                 )
 
                 ShareLink(item: URL(string: "https://workspaces.xyz/p/\(summary.slug)")!) {
@@ -57,6 +59,10 @@ struct SetupDetailView: View {
 
 private struct DetailContent: View {
     let detail: SetupDetail
+
+    /// Readable measure for the text column on wide (iPad) layouts. Has no
+    /// effect on iPhone, where the screen is narrower than the cap.
+    private static let readableWidth: CGFloat = 700
 
     var body: some View {
         ScrollView {
@@ -87,6 +93,8 @@ private struct DetailContent: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 26)
                 .padding(.bottom, 56)
+                .frame(maxWidth: Self.readableWidth, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -96,17 +104,20 @@ private struct DetailContent: View {
             Kicker(kickerLine)
 
             Text(detail.guestName)
-                .font(.system(size: 34, weight: .bold, design: .serif))
+                .scaledFont(size: 34, weight: .bold, design: .serif, relativeTo: .largeTitle)
                 .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             if let title = detail.guestTitle, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 16, design: .serif))
+                    .scaledFont(size: 16, design: .serif, relativeTo: .callout)
                     .italic()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.inkSecondary)
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var kickerLine: String {
@@ -124,7 +135,7 @@ private struct DetailContent: View {
                 Link(destination: link.url) {
                     HStack(spacing: 4) {
                         Text((link.platform ?? link.url.host() ?? "Link").uppercased())
-                            .font(.system(size: 11, weight: .semibold))
+                            .scaledFont(size: 11, weight: .semibold, relativeTo: .footnote)
                             .kerning(1.5)
                             .underline()
                         Image(systemName: "arrow.up.right")
@@ -133,6 +144,7 @@ private struct DetailContent: View {
                     .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(link.platform ?? link.url.host() ?? "Link"), opens in browser")
             }
         }
     }
@@ -146,7 +158,8 @@ private struct DetailContent: View {
     }
 }
 
-/// Horizontally paged, full-bleed photo gallery.
+/// Horizontally paged, full-bleed photo gallery. Each page announces its
+/// position ("Photo 2 of 6") along with the photo's alt text.
 private struct PhotoGallery: View {
     let photos: [Photo]
     @State private var page = 0
@@ -162,7 +175,9 @@ private struct PhotoGallery: View {
                         Color.clear
                             .overlay { RemoteImage(url: photo.url(width: 1200)) }
                             .clipped()
-                            .accessibilityLabel(photo.alt ?? "Workspace photo \(index + 1)")
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(photo.alt ?? "Workspace photo")
+                            .accessibilityValue("Photo \(index + 1) of \(photos.count)")
                             .tag(index)
                     }
                 }
@@ -174,6 +189,7 @@ private struct PhotoGallery: View {
                     Kicker("Fig. \(page + 1) / \(photos.count)", size: 9, color: .tertiary)
                         .monospacedDigit()
                         .padding(.trailing, 20)
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -228,16 +244,17 @@ private struct GearRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(name)
-                            .font(.system(size: 16, design: .serif))
+                            .scaledFont(size: 16, design: .serif, relativeTo: .body)
                             .multilineTextAlignment(.leading)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                     if let description = item.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 12, relativeTo: .caption)
+                            .foregroundStyle(Color.inkSecondary)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -251,16 +268,17 @@ private struct GearRow: View {
                 Link(destination: url) {
                     HStack(spacing: 3) {
                         Text("SHOP")
-                            .font(.system(size: 10, weight: .semibold))
+                            .scaledFont(size: 10, weight: .semibold, relativeTo: .caption)
                             .kerning(1.4)
                             .underline()
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 8, weight: .bold))
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.inkSecondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Shop \(name)")
+                .accessibilityHint("Opens the store in your browser")
             }
         }
         .padding(.vertical, 9)
@@ -270,9 +288,10 @@ private struct GearRow: View {
 /// Portable Text body copy in the editorial serif style: one `Text` per
 /// paragraph with bold/italic rendered via font traits and links tappable
 /// and underlined. Unknown marks and block types degrade to plain text.
+/// The body size scales with Dynamic Type.
 private struct RichBodyText: View {
     let content: PortableText
-    var size: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 15
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -332,9 +351,10 @@ private struct QASection: View {
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.question)
-                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .scaledFont(size: 17, weight: .semibold, design: .serif, relativeTo: .body)
                         .italic()
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let answer = item.answer, !answer.isEmpty {
                         RichBodyText(content: answer)
                     }

@@ -68,47 +68,80 @@ struct RootView: View {
 }
 
 /// The magazine masthead: nameplate, dateline, hairlines, section switcher.
+/// At accessibility text sizes the nameplate row and the three-item switcher
+/// stack vertically so nothing truncates or overlaps.
 private struct Masthead: View {
     @Binding var section: RootView.Section
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .lastTextBaseline, spacing: 12) {
-                Text("WORKSPACES")
-                    .font(.system(size: 28, weight: .black, design: .serif))
-                    .kerning(1.0)
-                Spacer()
-                Kicker(Date.now.dateline, size: 10, color: .tertiary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 6)
-            .padding(.bottom, 10)
+            nameplate
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
 
             Hairline(opacity: 0.6)
                 .padding(.horizontal, 20)
 
-            HStack(spacing: 28) {
-                sectionButton("Latest", .latest)
-                sectionButton("Saved", .saved)
-                sectionButton("Index", .index)
-                Spacer()
-            }
-            .padding(.horizontal, 20)
+            switcher
+                .padding(.horizontal, 20)
 
             Hairline()
         }
         .background(Color.paper)
     }
 
+    @ViewBuilder
+    private var nameplate: some View {
+        let title = Text("WORKSPACES")
+            .scaledFont(size: 28, weight: .black, design: .serif, relativeTo: .title)
+            .kerning(1.0)
+        let dateline = Kicker(Date.now.dateline, size: 10, color: .tertiary)
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                dateline
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .lastTextBaseline, spacing: 12) {
+                title
+                Spacer()
+                dateline
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var switcher: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionButton("Latest", .latest)
+                sectionButton("Saved", .saved)
+                sectionButton("Index", .index)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 28) {
+                sectionButton("Latest", .latest)
+                sectionButton("Saved", .saved)
+                sectionButton("Index", .index)
+                Spacer()
+            }
+        }
+    }
+
     private func sectionButton(_ title: String, _ value: RootView.Section) -> some View {
         Button {
             section = value
         } label: {
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(title.uppercased())
-                    .font(.system(size: 12, weight: section == value ? .bold : .medium))
+                    .scaledFont(size: 12, weight: section == value ? .bold : .medium, relativeTo: .footnote)
                     .kerning(1.8)
-                    .foregroundStyle(section == value ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(section == value ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.inkSecondary))
                     .padding(.vertical, 12)
                 Rectangle()
                     .fill(section == value ? Color.primary : .clear)
@@ -117,6 +150,7 @@ private struct Masthead: View {
             .fixedSize()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(title) section")
         .accessibilityAddTraits(section == value ? .isSelected : [])
     }
 }
