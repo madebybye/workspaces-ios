@@ -18,7 +18,7 @@
 #   1. Paid Apple Developer Program membership, signed into Xcode
 #      (Settings > Accounts) for the team that will own the app.
 #   2. App record created in App Store Connect for the bundle id
-#      (currently xyz.workspaces.app — see docs/TESTFLIGHT.md about ownership).
+#      (currently com.madebybye.workspaces — see docs/TESTFLIGHT.md about ownership).
 #   3. TEAM_ID below / in ExportOptions.plist set to that team.
 #
 # Usage:

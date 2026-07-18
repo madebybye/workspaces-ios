@@ -34,9 +34,10 @@ Status as of 2026-07-18, prepared on Robert's Mac (Xcode 26.6, build 17F113).
 ## What was intentionally NOT done
 
 - **No App Store export/upload was attempted.** Running
-  `-exportArchive -allowProvisioningUpdates` would have registered the
-  `xyz.workspaces.app` App ID under Robert's team. Decide bundle-id ownership
-  first (next section).
+  `-exportArchive -allowProvisioningUpdates` would have registered the App ID
+  before the bundle-id ownership decision was made. That decision has since
+  been made (next section); the upload is now unblocked once the App ID is
+  registered.
 - No credentials were entered, no certificates or keys were created, nothing
   was committed to git.
 
@@ -56,29 +57,21 @@ Status as of 2026-07-18, prepared on Robert's Mac (Xcode 26.6, build 17F113).
 
 ## Remaining human steps
 
-### 1. Decide who owns the app (do this first)
+### 1. Bundle-id ownership (DECIDED)
 
-The bundle id is `xyz.workspaces.app`. The friend owns workspaces.xyz, so
-`xyz.workspaces.*` is the natural namespace — but the App ID and the App
-Store Connect app record should be created under **their** Apple Developer
-team, not Robert's. Options:
-
-- **Friend's team (recommended):** friend enrolls in the Apple Developer
-  Program ($99/yr, developer.apple.com/programs) if not already enrolled,
-  then either adds Robert to the team (App Manager or Developer role) or
-  does the upload themselves.
-- **Robert's team (fast but wrong long-term):** works for a private
-  TestFlight, but the app record — and the reserved bundle id — would live
-  under Robert's team, and app transfers are a hassle. If you go this way
-  anyway, consider a bundle id you control (e.g. `com.affolk.workspaces`)
-  instead of squatting on `xyz.workspaces.app`.
+The bundle id is **`com.madebybye.workspaces`** — reverse-DNS of Robert's own
+domain (madebybye.com), so the App ID and App Store Connect record live under
+Robert's Apple Developer team with a namespace he controls. This avoids
+squatting on the friend's `xyz.workspaces.*` namespace; if the app is ever
+handed over to the site owner, use App Store Connect's app-transfer flow (the
+bundle id travels with the app).
 
 ### 2. Create the App ID and app record
 
-In [App Store Connect](https://appstoreconnect.apple.com) (owner's team):
+In [App Store Connect](https://appstoreconnect.apple.com) (Robert's team):
 
 1. Certificates, Identifiers & Profiles → Identifiers → **register App ID**
-   `xyz.workspaces.app` (explicit, no special capabilities needed).
+   `com.madebybye.workspaces` (explicit, no special capabilities needed).
    (Xcode's `-allowProvisioningUpdates` can also do this automatically.)
 2. App Store Connect → My Apps → **+ New App**: platform iOS, name
    "Workspaces" (must be globally unique on the store; have fallbacks ready,
