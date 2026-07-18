@@ -70,9 +70,17 @@ final class ImageLoader: @unchecked Sendable {
 
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.default
+        // A dedicated on-disk directory (rather than the shared default
+        // location) so image responses reliably persist across launches and
+        // hero images render instantly on a cold start from the feed cache.
+        let directory = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("RemoteImageCache", isDirectory: true)
         configuration.urlCache = URLCache(
             memoryCapacity: 16 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024
+            diskCapacity: 256 * 1024 * 1024,
+            directory: directory
         )
         return URLSession(configuration: configuration)
     }()

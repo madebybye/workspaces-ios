@@ -3,7 +3,8 @@ import Foundation
 // MARK: - Shared models
 
 /// A tag document, e.g. { name: "Home Office", slug: "home-office" }.
-struct Tag: Decodable, Identifiable, Hashable {
+/// Codable (not just Decodable) so it can round-trip through the feed disk cache.
+struct Tag: Codable, Identifiable, Hashable {
     let name: String
     let slug: String
 
@@ -11,7 +12,7 @@ struct Tag: Decodable, Identifiable, Hashable {
 }
 
 /// A photo with a Sanity CDN URL. Widths are applied server-side via query params.
-struct Photo: Decodable, Hashable {
+struct Photo: Codable, Hashable {
     var alt: String?
     let url: URL
 
@@ -30,7 +31,8 @@ struct Photo: Decodable, Hashable {
 // MARK: - Feed
 
 /// A setup as it appears in the feed list.
-struct SetupSummary: Decodable, Identifiable, Hashable {
+/// Codable (not just Decodable) so it can round-trip through the feed disk cache.
+struct SetupSummary: Codable, Identifiable, Hashable {
     let issueNumber: Int
     let slug: String
     let guestName: String

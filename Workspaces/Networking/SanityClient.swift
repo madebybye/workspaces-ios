@@ -40,12 +40,18 @@ struct SanityClient {
     private static let iso = ISO8601DateFormatter()
 
     /// Runs a GROQ query and decodes the `result` field of the response envelope.
-    func fetch<T: Decodable>(_ type: T.Type, query: String) async throws -> T {
+    /// Pass `forceFresh: true` (e.g. from pull-to-refresh) to bypass any local
+    /// HTTP cache for this one request; the default honors protocol caching.
+    func fetch<T: Decodable>(_ type: T.Type, query: String, forceFresh: Bool = false) async throws -> T {
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "query", value: query)]
         guard let url = components.url else { throw URLError(.badURL) }
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        if forceFresh {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
