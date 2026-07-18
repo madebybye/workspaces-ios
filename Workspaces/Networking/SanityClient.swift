@@ -104,10 +104,7 @@ enum GROQ {
         return "*[\(filter)] | order(issueNumber desc)[\(offset)...\(offset + limit)]\(summaryProjection)"
     }
 
-    /// Full document for the detail screen.
-    static func setupDetail(slug: String) -> String {
-        """
-        *[_type=="setup" && \(notDraft) && slug.current=="\(escape(slug))"][0]\
+    private static let detailProjection = """
         {issueNumber, "slug": slug.current, guestName, guestTitle, guestLocation, publishedAt, \
         photos[]{alt, "url": asset->url}, \
         gear[]{name, category, affiliateUrl, description}, \
@@ -115,7 +112,31 @@ enum GROQ {
         guestBio, \
         guestLinks[]{platform, url}}
         """
+
+    /// Full document for the detail screen.
+    static func setupDetail(slug: String) -> String {
+        """
+        *[_type=="setup" && \(notDraft) && slug.current=="\(escape(slug))"][0]\(detailProjection)
+        """
     }
+
+    /// Full documents for a batch of slugs (archive sync; ~50 docs ≈ 300 KB).
+    static func setupDetails(slugs: [String]) -> String {
+        let list = slugs.map { "\"\(escape($0))\"" }.joined(separator: ",")
+        return "*[_type==\"setup\" && \(notDraft) && slug.current in [\(list)]]\(detailProjection)"
+    }
+
+    /// Tiny freshness probe for the archive sync: the newest issue number
+    /// and the total published count.
+    static let archiveHead = """
+        {"newest": *[_type=="setup" && \(notDraft)] | order(issueNumber desc)[0].issueNumber, \
+        "total": count(*[_type=="setup" && \(notDraft)])}
+        """
+
+    /// Every published slug, newest first (~15 KB), for the archive sync.
+    static let archiveIndex = """
+        *[_type=="setup" && \(notDraft)] | order(issueNumber desc)[].slug.current
+        """
 
     static let allTags = #"*[_type=="tag"]{name, "slug": slug.current} | order(name asc)"#
 

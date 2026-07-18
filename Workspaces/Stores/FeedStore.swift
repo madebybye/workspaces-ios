@@ -41,6 +41,11 @@ final class FeedStore {
         } else {
             await reload(showSpinner: true)
         }
+        if isUnfiltered {
+            // Fire-and-forget offline sync of the archive (runs once per
+            // launch, cheap no-op when already up to date).
+            ArchiveSync.shared.kickoff()
+        }
     }
 
     /// Pull-to-refresh: bypasses HTTP caching so the update is real.

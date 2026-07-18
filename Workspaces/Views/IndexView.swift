@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The back-of-book index: minimal search, then TAGS / COLLECTIONS / GEAR as
-/// hairline-ruled typographic sections, and compact result rows when
-/// filtering. On regular width (iPad) the browse sections flow into two
-/// columns; at accessibility text sizes the tag grid collapses to one column.
+/// The back-of-book index: minimal search, then TAGS / GEAR as hairline-ruled
+/// typographic sections, and compact result rows when filtering. (Collections
+/// moved to their own top-level COLLECTIONS section.) On regular width (iPad)
+/// the browse sections flow into two columns; at accessibility text sizes the
+/// tag grid collapses to one column.
 struct IndexView: View {
     let tagStore: TagStore
-    let collectionStore: CollectionStore
     let gearIndex: GearIndexStore
     let results: FeedStore
     @Binding var searchText: String
@@ -32,7 +32,6 @@ struct IndexView: View {
         }
         .task {
             await tagStore.load()
-            await collectionStore.load()
             await gearIndex.load()
         }
         .onChange(of: searchText) { applyFilters() }
@@ -96,16 +95,12 @@ struct IndexView: View {
                     HStack(alignment: .top, spacing: 48) {
                         tagsSection
                             .frame(maxWidth: .infinity, alignment: .topLeading)
-                        VStack(alignment: .leading, spacing: 40) {
-                            collectionsSection
-                            gearSection
-                        }
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        gearSection
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 40) {
                         tagsSection
-                        collectionsSection
                         gearSection
                     }
                 }
@@ -120,7 +115,6 @@ struct IndexView: View {
         }
         .refreshable {
             await gearIndex.refresh()
-            await collectionStore.load(forceFresh: true)
         }
     }
 
@@ -203,68 +197,6 @@ struct IndexView: View {
                 }
             }
         }
-    }
-
-    // MARK: Collections
-
-    private var collectionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader("Collections")
-
-            switch collectionStore.phase {
-            case .loading:
-                sectionSpinner
-            case .failed:
-                sectionRetry { await collectionStore.load() }
-            case .loaded:
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(collectionStore.collections) { collection in
-                        NavigationLink(value: collection) {
-                            VStack(alignment: .leading, spacing: 0) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                        Text(collection.title.uppercased())
-                                            .scaledFont(size: 12, weight: .medium, relativeTo: .footnote)
-                                            .kerning(1.5)
-                                        Spacer()
-                                        if let count = collection.setupCount, count > 0 {
-                                            Kicker("\(count)", size: 10, color: .tertiary)
-                                                .monospacedDigit()
-                                        }
-                                    }
-                                    if let description = collection.description, !description.isEmpty {
-                                        Text(description)
-                                            .scaledFont(size: 13, design: .serif, relativeTo: .footnote)
-                                            .italic()
-                                            .foregroundStyle(Color.inkSecondary)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                }
-                                .padding(.vertical, 12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Hairline(opacity: 0.12)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(collectionLabel(collection))
-                    }
-                }
-            }
-        }
-    }
-
-    private func collectionLabel(_ collection: SetupCollection) -> String {
-        var parts = ["\(collection.title), collection"]
-        if let count = collection.setupCount, count > 0 {
-            parts.append("\(count) \(count == 1 ? "setup" : "setups")")
-        }
-        if let description = collection.description, !description.isEmpty {
-            parts.append(description)
-        }
-        return parts.joined(separator: ", ")
     }
 
     // MARK: Gear

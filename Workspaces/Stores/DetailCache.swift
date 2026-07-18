@@ -1,16 +1,17 @@
 import Foundation
 
-/// A disk cache of full setup details so revisiting (or prefetched) issues
-/// render instantly while fresh data revalidates in the background.
+/// The primary on-disk store of full setup details: the entire archive
+/// (~534 small JSON files, ~3 MB total) is synced here by `ArchiveSync`, so
+/// every issue's text renders instantly and offline. Visited issues still
+/// revalidate over the network in the background.
 ///
 /// Layout: one JSON file per slug inside `Caches/detail-cache-v1/`. The
 /// schema version is baked into the directory name: when `SetupDetail`
 /// changes shape, bump the version and old files are simply never read
-/// again. Eviction is LRU-ish: reads touch the file's modification date and
-/// saves prune the oldest files beyond `maxEntries`. All failures are
-/// silent; callers fall through to the normal network path.
+/// again. There is no eviction — the archive is small and `ArchiveSync`
+/// would only re-download pruned entries. All failures are silent; callers
+/// fall through to the normal network path.
 enum DetailCache {
-    static let maxEntries = 30
     private static let directoryName = "detail-cache-v1"
 
     private static var directory: URL? {
@@ -28,52 +29,52 @@ enum DetailCache {
     }
 
     /// Returns nil for a missing, unreadable, corrupt, or stale-schema entry.
-    /// A successful read marks the entry as recently used.
     static func load(slug: String) -> SetupDetail? {
         guard let url = fileURL(for: slug),
               let data = try? Data(contentsOf: url),
               let detail = try? decoder.decode(SetupDetail.self, from: data)
         else { return nil }
-        // Touch the modification date so eviction keeps recently read entries.
-        Task.detached(priority: .utility) {
-            try? FileManager.default.setAttributes(
-                [.modificationDate: Date()],
-                ofItemAtPath: url.path
-            )
-        }
         return detail
     }
 
-    /// Persists a detail keyed by its slug, then prunes the least recently
-    /// used entries beyond `maxEntries`. Best-effort and off the main actor.
+    /// True when an entry for this slug exists on disk (without decoding it).
+    /// Lets the archive sync skip already-synced issues cheaply.
+    static func contains(slug: String) -> Bool {
+        guard let url = fileURL(for: slug) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    /// The slugs currently cached, derived from the filenames on disk.
+    static func cachedSlugs() -> Set<String> {
+        guard let directory,
+              let files = try? FileManager.default.contentsOfDirectory(
+                  at: directory,
+                  includingPropertiesForKeys: nil,
+                  options: .skipsHiddenFiles
+              )
+        else { return [] }
+        return Set(
+            files
+                .filter { $0.pathExtension == "json" }
+                .map { $0.deletingPathExtension().lastPathComponent }
+        )
+    }
+
+    /// Persists a detail keyed by its slug. Best-effort and off the main actor.
     static func save(_ detail: SetupDetail) {
-        guard let directory, let url = fileURL(for: detail.slug) else { return }
         Task.detached(priority: .utility) {
-            let fm = FileManager.default
-            try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
-            guard let data = try? encoder.encode(detail) else { return }
-            try? data.write(to: url, options: .atomic)
-            pruneIfNeeded(in: directory)
+            write(detail)
         }
     }
 
-    /// Deletes the oldest-touched files beyond `maxEntries`.
-    private static func pruneIfNeeded(in directory: URL) {
+    /// Synchronous variant for callers already off the main actor (the
+    /// archive sync writes hundreds of entries in sequence).
+    static func write(_ detail: SetupDetail) {
+        guard let directory, let url = fileURL(for: detail.slug) else { return }
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ), files.count > maxEntries else { return }
-
-        let dated = files.map { url in
-            (url: url,
-             date: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast)
-        }
-        for stale in dated.sorted(by: { $0.date > $1.date }).dropFirst(maxEntries) {
-            try? fm.removeItem(at: stale.url)
-        }
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard let data = try? encoder.encode(detail) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
     // Fractional-seconds ISO 8601 both ways so dates round-trip with the

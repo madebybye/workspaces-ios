@@ -67,7 +67,7 @@ private struct DetailContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PhotoGallery(photos: detail.photos ?? [])
+                PhotoGallery(photos: detail.photos, issueNumber: detail.issueNumber)
 
                 VStack(alignment: .leading, spacing: 32) {
                     header
@@ -76,16 +76,16 @@ private struct DetailContent: View {
                         RichBodyText(content: bio)
                     }
 
-                    if let links = detail.guestLinks, !links.isEmpty {
-                        linksRow(links)
+                    if !detail.guestLinks.isEmpty {
+                        linksRow(detail.guestLinks)
                     }
 
-                    if let gear = detail.gear, !gear.isEmpty {
-                        GearSection(gear: gear)
+                    if !detail.gear.isEmpty {
+                        GearSection(gear: detail.gear)
                     }
 
-                    if let qa = detail.qa, !qa.isEmpty {
-                        QASection(items: qa)
+                    if !detail.qa.isEmpty {
+                        QASection(items: detail.qa)
                     }
 
                     footer
@@ -159,10 +159,19 @@ private struct DetailContent: View {
 }
 
 /// Horizontally paged, full-bleed photo gallery. Each page announces its
-/// position ("Photo 2 of 6") along with the photo's alt text.
+/// position ("Photo 2 of 6") along with the photo's alt text. Tapping a page
+/// opens the full-screen figure stack at that photo.
 private struct PhotoGallery: View {
     let photos: [Photo]
+    let issueNumber: Int
     @State private var page = 0
+    @State private var presented: GalleryPresentation?
+
+    /// Identifiable wrapper so `fullScreenCover(item:)` opens at the tapped
+    /// photo without stale-state races.
+    private struct GalleryPresentation: Identifiable {
+        let id: Int
+    }
 
     var body: some View {
         if photos.isEmpty {
@@ -175,9 +184,13 @@ private struct PhotoGallery: View {
                         Color.clear
                             .overlay { RemoteImage(url: photo.url(width: 1200)) }
                             .clipped()
+                            .contentShape(Rectangle())
+                            .onTapGesture { presented = GalleryPresentation(id: index) }
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(photo.alt ?? "Workspace photo")
                             .accessibilityValue("Photo \(index + 1) of \(photos.count)")
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("Opens all photos full screen")
                             .tag(index)
                     }
                 }
@@ -192,6 +205,97 @@ private struct PhotoGallery: View {
                         .accessibilityHidden(true)
                 }
             }
+            .fullScreenCover(item: $presented) { presentation in
+                FullScreenGalleryView(
+                    issueNumber: issueNumber,
+                    photos: photos,
+                    startIndex: presentation.id
+                )
+            }
+        }
+    }
+}
+
+/// The full-screen figure stack: every photo of the setup, full-width, in
+/// order, vertically scrollable on paper, with FIG. captions and alt text.
+private struct FullScreenGalleryView: View {
+    let issueNumber: Int
+    let photos: [Photo]
+    let startIndex: Int
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 36) {
+                    ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
+                        figure(index: index, photo: photo)
+                            .id(index)
+                    }
+                }
+                .padding(.top, 6)
+                .padding(.bottom, 48)
+            }
+            .onAppear {
+                if startIndex > 0 {
+                    proxy.scrollTo(startIndex, anchor: .top)
+                }
+            }
+        }
+        .background(Color.paper)
+        .safeAreaInset(edge: .top, spacing: 0) { topBar }
+    }
+
+    private var topBar: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Kicker("Issue \(issueNumber)  ·  Figures", size: 11, color: .primary)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .light))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close photos")
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 8)
+            .padding(.vertical, 2)
+
+            Hairline()
+        }
+        .background(Color.paper)
+    }
+
+    private func figure(index: Int, photo: Photo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            RemoteImage(url: photo.url(width: 1200), contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(photo.alt ?? "Workspace photo")
+                .accessibilityValue("Photo \(index + 1) of \(photos.count)")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Kicker("Fig. \(index + 1) / \(photos.count)", size: 9, color: .tertiary)
+                    .monospacedDigit()
+
+                if let alt = photo.alt?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !alt.isEmpty {
+                    Text(alt)
+                        .scaledFont(size: 13, design: .serif, relativeTo: .footnote)
+                        .italic()
+                        .foregroundStyle(Color.inkSecondary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 20)
+            .accessibilityHidden(true)
         }
     }
 }

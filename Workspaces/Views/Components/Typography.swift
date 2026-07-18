@@ -149,7 +149,7 @@ extension SetupSummary {
 
     /// "HOME OFFICE / LIGHT-FILLED / DESIGNER" quiet inline tag line.
     var tagLine: String? {
-        guard let tags, !tags.isEmpty else { return nil }
+        guard !tags.isEmpty else { return nil }
         return tags.map(\.name).joined(separator: " / ")
     }
 

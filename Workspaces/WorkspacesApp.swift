@@ -14,6 +14,7 @@ struct RootView: View {
     enum Section {
         case latest
         case saved
+        case collections
         case index
     }
 
@@ -40,10 +41,11 @@ struct RootView: View {
                     FeedView(store: feed)
                 case .saved:
                     SavedView(store: savedStore)
+                case .collections:
+                    CollectionsView(store: collectionStore)
                 case .index:
                     IndexView(
                         tagStore: tagStore,
-                        collectionStore: collectionStore,
                         gearIndex: gearIndex,
                         results: results,
                         searchText: $searchText,
@@ -120,15 +122,19 @@ private struct Masthead: View {
             VStack(alignment: .leading, spacing: 0) {
                 sectionButton("Latest", .latest)
                 sectionButton("Saved", .saved)
+                sectionButton("Collections", .collections)
                 sectionButton("Index", .index)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            HStack(spacing: 28) {
+            // Four items: tighter tracking and gaps than the old three-item
+            // row so LATEST/SAVED/COLLECTIONS/INDEX fits compact widths.
+            HStack(spacing: 18) {
                 sectionButton("Latest", .latest)
                 sectionButton("Saved", .saved)
+                sectionButton("Collections", .collections)
                 sectionButton("Index", .index)
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
@@ -139,8 +145,10 @@ private struct Masthead: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title.uppercased())
-                    .scaledFont(size: 12, weight: section == value ? .bold : .medium, relativeTo: .footnote)
-                    .kerning(1.8)
+                    .scaledFont(size: 11.5, weight: section == value ? .bold : .medium, relativeTo: .footnote)
+                    .kerning(1.2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .foregroundStyle(section == value ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.inkSecondary))
                     .padding(.vertical, 12)
                 Rectangle()

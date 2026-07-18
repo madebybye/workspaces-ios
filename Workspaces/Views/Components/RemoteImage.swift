@@ -78,9 +78,11 @@ final class ImageLoader: @unchecked Sendable {
             .urls(for: .cachesDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("RemoteImageCache", isDirectory: true)
+        // Sized to hold the tier-1 prefetch (newest 50 issues × ~8 photos
+        // at w=1200 ≈ 100–150 MB) plus normal browsing without churn.
         configuration.urlCache = URLCache(
             memoryCapacity: 16 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024,
+            diskCapacity: 512 * 1024 * 1024,
             directory: directory
         )
         return URLSession(configuration: configuration)
@@ -91,6 +93,15 @@ final class ImageLoader: @unchecked Sendable {
 
     func cachedImage(for url: URL) -> UIImage? {
         cache.object(forKey: url as NSURL)
+    }
+
+    /// Warms the disk-backed URLCache without decoding the image or touching
+    /// the in-memory cache. Used by the archive sync's tier-1 photo
+    /// prefetch: the request goes through the same session (and thus the
+    /// same cache keys) the views use, so an already-cached photo is a local
+    /// disk hit and a new one is stored for offline display.
+    func prefetch(_ url: URL) async {
+        _ = try? await session.data(from: url)
     }
 
     func image(for url: URL) async throws -> UIImage {

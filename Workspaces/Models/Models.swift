@@ -1,5 +1,58 @@
 import Foundation
 
+// MARK: - Lossy decoding
+
+/// An array that drops elements that fail to decode instead of failing the
+/// whole document. Live CMS content is occasionally malformed (a gear item
+/// without a name, a link without a URL); one bad element should never take
+/// down an entire setup. Encodes back to a plain JSON array, so it is
+/// invisible to the disk caches.
+@propertyWrapper
+struct LossyArray<Element: Codable & Hashable>: Codable, Hashable {
+    var wrappedValue: [Element]
+
+    init(wrappedValue: [Element] = []) {
+        self.wrappedValue = wrappedValue
+    }
+
+    init(from decoder: Decoder) throws {
+        var result: [Element] = []
+        if var container = try? decoder.unkeyedContainer() {
+            while !container.isAtEnd {
+                if let element = try? container.decode(Element.self) {
+                    result.append(element)
+                } else {
+                    // Consume and discard the malformed element.
+                    _ = try? container.decode(DiscardedValue.self)
+                }
+            }
+        }
+        wrappedValue = result
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try wrappedValue.encode(to: encoder)
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// A missing key or JSON null decodes as an empty lossy array.
+    func decode<T>(_ type: LossyArray<T>.Type, forKey key: Key) throws -> LossyArray<T> {
+        (try? decodeIfPresent(type, forKey: key)) ?? LossyArray()
+    }
+}
+
+/// Decodes successfully from any JSON value and throws it away, advancing
+/// an unkeyed container past unrecognized elements.
+struct DiscardedValue: Codable {
+    init() {}
+    init(from decoder: Decoder) throws {}
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encodeNil()
+    }
+}
+
 // MARK: - Shared models
 
 /// A tag document, e.g. { name: "Home Office", slug: "home-office" }.
@@ -15,6 +68,13 @@ struct Tag: Codable, Identifiable, Hashable {
 struct Photo: Codable, Hashable {
     var alt: String?
     let url: URL
+
+    /// Tolerant: only the URL is essential; a malformed `alt` is dropped.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(URL.self, forKey: .url)
+        alt = (try? container.decodeIfPresent(String.self, forKey: .alt)) ?? nil
+    }
 
     /// Returns a CDN URL resized server-side to the given pixel width.
     func url(width: Int) -> URL {
@@ -41,9 +101,25 @@ struct SetupSummary: Codable, Identifiable, Hashable {
     var publishedAt: Date?
     var hero: Photo?
     var photoCount: Int?
-    var tags: [Tag]?
+    @LossyArray var tags: [Tag]
 
     var id: String { slug }
+
+    /// Tolerant: only identity fields are essential. Anything else that is
+    /// missing, null, or malformed degrades to nil / empty instead of
+    /// failing the whole summary (and with it the entire feed page).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        issueNumber = try c.decode(Int.self, forKey: .issueNumber)
+        slug = try c.decode(String.self, forKey: .slug)
+        guestName = try c.decode(String.self, forKey: .guestName)
+        guestTitle = (try? c.decodeIfPresent(String.self, forKey: .guestTitle)) ?? nil
+        guestLocation = (try? c.decodeIfPresent(String.self, forKey: .guestLocation)) ?? nil
+        publishedAt = (try? c.decodeIfPresent(Date.self, forKey: .publishedAt)) ?? nil
+        hero = (try? c.decodeIfPresent(Photo.self, forKey: .hero)) ?? nil
+        photoCount = (try? c.decodeIfPresent(Int.self, forKey: .photoCount)) ?? nil
+        _tags = try c.decode(LossyArray<Tag>.self, forKey: .tags)
+    }
 }
 
 // MARK: - Browse dimensions
@@ -86,13 +162,31 @@ struct SetupDetail: Codable, Hashable {
     var guestTitle: String?
     var guestLocation: String?
     var publishedAt: Date?
-    var photos: [Photo]?
-    var gear: [GearItem]?
-    var qa: [QAItem]?
+    @LossyArray var photos: [Photo]
+    @LossyArray var gear: [GearItem]
+    @LossyArray var qa: [QAItem]
     var guestBio: PortableText?
-    var guestLinks: [GuestLink]?
+    @LossyArray var guestLinks: [GuestLink]
 
     var shareURL: URL { URL(string: "https://workspaces.xyz/p/\(slug)")! }
+
+    /// Tolerant: only identity fields are essential; everything else
+    /// degrades to nil / empty, and malformed array elements are dropped
+    /// individually via `LossyArray` instead of failing the whole document.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        issueNumber = try c.decode(Int.self, forKey: .issueNumber)
+        slug = try c.decode(String.self, forKey: .slug)
+        guestName = try c.decode(String.self, forKey: .guestName)
+        guestTitle = (try? c.decodeIfPresent(String.self, forKey: .guestTitle)) ?? nil
+        guestLocation = (try? c.decodeIfPresent(String.self, forKey: .guestLocation)) ?? nil
+        publishedAt = (try? c.decodeIfPresent(Date.self, forKey: .publishedAt)) ?? nil
+        _photos = try c.decode(LossyArray<Photo>.self, forKey: .photos)
+        _gear = try c.decode(LossyArray<GearItem>.self, forKey: .gear)
+        _qa = try c.decode(LossyArray<QAItem>.self, forKey: .qa)
+        guestBio = (try? c.decodeIfPresent(PortableText.self, forKey: .guestBio)) ?? nil
+        _guestLinks = try c.decode(LossyArray<GuestLink>.self, forKey: .guestLinks)
+    }
 }
 
 struct GearItem: Codable, Identifiable, Hashable {
@@ -102,6 +196,17 @@ struct GearItem: Codable, Identifiable, Hashable {
     var description: String?
 
     var id: String { (category ?? "") + name + (affiliateUrl?.absoluteString ?? "") }
+
+    /// Tolerant: only the name is essential. In particular a malformed
+    /// `affiliateUrl` (issue 230 has "http://JBL Tune 600BTNC") must not
+    /// drop the gear item, let alone the setup.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        category = (try? container.decodeIfPresent(String.self, forKey: .category)) ?? nil
+        affiliateUrl = (try? container.decodeIfPresent(URL.self, forKey: .affiliateUrl)) ?? nil
+        description = (try? container.decodeIfPresent(String.self, forKey: .description)) ?? nil
+    }
 }
 
 struct QAItem: Codable, Identifiable, Hashable {
@@ -109,6 +214,14 @@ struct QAItem: Codable, Identifiable, Hashable {
     var answer: PortableText?
 
     var id: String { question }
+
+    /// Tolerant: only the question is essential; an unreadable answer
+    /// degrades to nil.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        question = try container.decode(String.self, forKey: .question)
+        answer = (try? container.decodeIfPresent(PortableText.self, forKey: .answer)) ?? nil
+    }
 }
 
 struct GuestLink: Codable, Identifiable, Hashable {
@@ -116,6 +229,13 @@ struct GuestLink: Codable, Identifiable, Hashable {
     let url: URL
 
     var id: String { url.absoluteString }
+
+    /// Tolerant: only the URL is essential; a malformed platform is dropped.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(URL.self, forKey: .url)
+        platform = (try? container.decodeIfPresent(String.self, forKey: .platform)) ?? nil
+    }
 }
 
 // MARK: - Portable Text
@@ -136,25 +256,33 @@ struct PortableText: Codable, Hashable {
     var isEmpty: Bool { blocks.isEmpty }
 
     init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        var result: [Block] = []
-        while !container.isAtEnd {
-            if let block = try? container.decode(Block.self) {
-                // Keep only real text blocks that have visible content.
-                if block._type == "block",
-                   !block.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    result.append(block)
+        // The CMS delivers rich text in two shapes: proper Portable Text
+        // (an array of blocks) and — for some issues, e.g. 532/533 — a bare
+        // HTML string. Accept both; anything else degrades to empty.
+        if var container = try? decoder.unkeyedContainer() {
+            var result: [Block] = []
+            while !container.isAtEnd {
+                if let block = try? container.decode(Block.self) {
+                    // Keep only real text blocks that have visible content.
+                    if block._type == "block",
+                       !block.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        result.append(block)
+                    }
+                } else if let string = try? container.decode(String.self),
+                          !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    // A bare string degrades to an unmarked paragraph.
+                    result.append(Block(_type: "block", children: [Span(text: string)]))
+                } else {
+                    // Consume and discard anything else (numbers, null, arrays…).
+                    _ = try? container.decode(DiscardedValue.self)
                 }
-            } else if let string = try? container.decode(String.self),
-                      !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // A bare string degrades to an unmarked paragraph.
-                result.append(Block(_type: "block", children: [Span(text: string)]))
-            } else {
-                // Consume and discard anything else (numbers, null, arrays…).
-                _ = try? container.decode(DiscardedValue.self)
             }
+            blocks = result
+        } else if let string = try? decoder.singleValueContainer().decode(String.self) {
+            blocks = Self.blocks(fromHTML: string)
+        } else {
+            blocks = []
         }
-        blocks = result
     }
 
     func encode(to encoder: Encoder) throws {
@@ -209,9 +337,95 @@ struct PortableText: Codable, Hashable {
         case link(URL)
     }
 
-    /// Decodes successfully from any JSON value and throws it away,
-    /// advancing the unkeyed container past unrecognized elements.
-    private struct DiscardedValue: Decodable {
-        init(from decoder: Decoder) throws {}
+    // MARK: HTML-string fallback
+
+    /// Converts a bare HTML/plain string into paragraphs, preserving anchor
+    /// tags as tappable link spans, stripping any other markup, and
+    /// unescaping common entities. Best-effort by design: the goal is
+    /// readable editorial copy, not full HTML fidelity.
+    private static func blocks(fromHTML html: String) -> [Block] {
+        let paragraphBreaks = try? NSRegularExpression(
+            pattern: #"(?i)</p>|<p\b[^>]*>|<br\s*/?>|\n{2,}"#
+        )
+        let source = paragraphBreaks?.stringByReplacingMatches(
+            in: html,
+            range: NSRange(html.startIndex..., in: html),
+            withTemplate: "\n\n"
+        ) ?? html
+
+        return source
+            .components(separatedBy: "\n\n")
+            .compactMap { block(fromHTMLParagraph: $0) }
+    }
+
+    /// One paragraph: anchors become link spans (with a markDef carrying the
+    /// href), everything between them becomes plain spans.
+    private static func block(fromHTMLParagraph paragraph: String) -> Block? {
+        guard let anchor = try? NSRegularExpression(
+            pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*"([^"]*)"[^>]*>(.*?)</a>"#
+        ) else { return nil }
+
+        var children: [Span] = []
+        var markDefs: [MarkDef] = []
+        var cursor = paragraph.startIndex
+
+        let matches = anchor.matches(
+            in: paragraph,
+            range: NSRange(paragraph.startIndex..., in: paragraph)
+        )
+        for (index, match) in matches.enumerated() {
+            guard let whole = Range(match.range, in: paragraph),
+                  let hrefRange = Range(match.range(at: 1), in: paragraph),
+                  let labelRange = Range(match.range(at: 2), in: paragraph)
+            else { continue }
+
+            let before = plainText(fromHTML: String(paragraph[cursor..<whole.lowerBound]))
+            if !before.isEmpty { children.append(Span(text: before)) }
+
+            let label = plainText(fromHTML: String(paragraph[labelRange]))
+            let href = unescapeEntities(String(paragraph[hrefRange]))
+            if !label.isEmpty {
+                if let url = URL(string: href) {
+                    let key = "html-link-\(index)"
+                    markDefs.append(MarkDef(_key: key, _type: "link", href: url.absoluteString))
+                    children.append(Span(text: label, marks: [key]))
+                } else {
+                    children.append(Span(text: label))
+                }
+            }
+            cursor = whole.upperBound
+        }
+
+        let trailing = plainText(fromHTML: String(paragraph[cursor...]))
+        if !trailing.isEmpty { children.append(Span(text: trailing)) }
+
+        let block = Block(_type: "block", children: children, markDefs: markDefs)
+        guard !block.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return block
+    }
+
+    /// Strips any remaining tags and unescapes entities.
+    private static func plainText(fromHTML fragment: String) -> String {
+        let stripped = (try? NSRegularExpression(pattern: "<[^>]+>"))?
+            .stringByReplacingMatches(
+                in: fragment,
+                range: NSRange(fragment.startIndex..., in: fragment),
+                withTemplate: ""
+            ) ?? fragment
+        return unescapeEntities(stripped)
+    }
+
+    private static func unescapeEntities(_ string: String) -> String {
+        guard string.contains("&") else { return string }
+        var result = string
+        for (entity, replacement) in [
+            ("&nbsp;", "\u{00A0}"), ("&quot;", "\""), ("&#39;", "'"),
+            ("&apos;", "'"), ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"),
+        ] {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        return result
     }
 }
