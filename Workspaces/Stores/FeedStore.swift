@@ -24,6 +24,18 @@ final class FeedStore {
 
     private let client = SanityClient.shared
     private var loadTask: Task<Void, Never>?
+    private var paginationTask: Task<Void, Never>?
+
+    /// Bumped by every `reload` so stale tasks (an earlier reload, or a
+    /// pagination fetch racing a filter change) can detect that their results
+    /// belong to a superseded query and must not be appended or persisted.
+    private var generation = 0
+
+    /// Whether gear results fell back to the loose GROQ token `match` because
+    /// exact (case-insensitive) name equality found nothing. Exact-first keeps
+    /// result counts consistent with the gear index tallies; the fallback
+    /// keeps detail-page gear rows useful for variant spellings.
+    private var gearLooseMatch = false
 
     /// True for the unfiltered front-of-book feed, the only configuration the
     /// disk cache serves and persists.
@@ -53,19 +65,33 @@ final class FeedStore {
         await reload(showSpinner: setups.isEmpty, forceFresh: true)
     }
 
-    /// Cancels any in-flight load and refetches the first page with current
-    /// filters, resetting pagination. `forceFresh` skips the local HTTP cache.
+    /// Cancels any in-flight load or pagination and refetches the first page
+    /// with current filters, resetting pagination. `forceFresh` skips the
+    /// local HTTP cache.
     func reload(showSpinner: Bool, forceFresh: Bool = false) async {
         loadTask?.cancel()
+        paginationTask?.cancel()
+        isLoadingMore = false
+        generation += 1
+        let requestGeneration = generation
         if showSpinner { phase = .loading }
         let task = Task { [tagSlug, search, gearName, collectionId] in
             do {
-                let query = GROQ.setups(
-                    offset: 0, tagSlug: tagSlug, search: search,
-                    gearName: gearName, collectionId: collectionId
+                var loose = false
+                var page = try await fetchPage(
+                    offset: 0, tagSlug: tagSlug, search: search, gearName: gearName,
+                    gearLoose: false, collectionId: collectionId, forceFresh: forceFresh
                 )
-                let page = try await client.fetch([SetupSummary].self, query: query, forceFresh: forceFresh)
-                guard !Task.isCancelled else { return }
+                if page.isEmpty, let gearName, !gearName.isEmpty {
+                    // No exact-name gear hits: fall back to the loose token match.
+                    loose = true
+                    page = try await fetchPage(
+                        offset: 0, tagSlug: tagSlug, search: search, gearName: gearName,
+                        gearLoose: true, collectionId: collectionId, forceFresh: forceFresh
+                    )
+                }
+                guard !Task.isCancelled, requestGeneration == generation else { return }
+                gearLooseMatch = loose
                 setups = page
                 reachedEnd = page.count < GROQ.pageSize
                 phase = page.isEmpty ? .empty : .loaded
@@ -73,7 +99,7 @@ final class FeedStore {
                 prefetchLeadDetailIfNeeded()
             } catch is CancellationError {
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, requestGeneration == generation else { return }
                 if setups.isEmpty {
                     phase = .failed(error.localizedDescription)
                 }
@@ -89,14 +115,20 @@ final class FeedStore {
         guard let index = setups.firstIndex(of: setup), index >= threshold else { return }
 
         isLoadingMore = true
-        Task { [tagSlug, search, gearName, collectionId] in
-            defer { isLoadingMore = false }
+        let requestGeneration = generation
+        paginationTask = Task { [tagSlug, search, gearName, collectionId, gearLooseMatch] in
+            defer {
+                if requestGeneration == generation { isLoadingMore = false }
+            }
             do {
-                let query = GROQ.setups(
-                    offset: setups.count, tagSlug: tagSlug, search: search,
-                    gearName: gearName, collectionId: collectionId
+                let page = try await fetchPage(
+                    offset: setups.count, tagSlug: tagSlug, search: search, gearName: gearName,
+                    gearLoose: gearLooseMatch, collectionId: collectionId, forceFresh: false
                 )
-                let page = try await client.fetch([SetupSummary].self, query: query)
+                // A reload (filter change) may have superseded this fetch;
+                // appending would mix results across queries and could even
+                // persist them into the feed cache.
+                guard !Task.isCancelled, requestGeneration == generation else { return }
                 let existing = Set(setups.map(\.slug))
                 setups.append(contentsOf: page.filter { !existing.contains($0.slug) })
                 if page.count < GROQ.pageSize { reachedEnd = true }
@@ -105,6 +137,21 @@ final class FeedStore {
                 // Pagination failures are silent; scrolling again retries.
             }
         }
+    }
+
+    /// One page fetch, decoded lossily so a single malformed document can't
+    /// take down the whole page.
+    private func fetchPage(
+        offset: Int, tagSlug: String?, search: String?, gearName: String?,
+        gearLoose: Bool, collectionId: String?, forceFresh: Bool
+    ) async throws -> [SetupSummary] {
+        let query = GROQ.setups(
+            offset: offset, tagSlug: tagSlug, search: search,
+            gearName: gearName, gearLoose: gearLoose, collectionId: collectionId
+        )
+        return try await client.fetch(
+            LossyArray<SetupSummary>.self, query: query, forceFresh: forceFresh
+        ).wrappedValue
     }
 
     /// Rewrites the disk cache from the current list, but only for the

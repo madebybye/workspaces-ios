@@ -175,8 +175,10 @@ private struct PhotoGallery: View {
 
     var body: some View {
         if photos.isEmpty {
+            // Decorative placeholder; nothing useful for VoiceOver here.
             RemoteImage(url: nil)
                 .aspectRatio(4 / 3, contentMode: .fit)
+                .accessibilityHidden(true)
         } else {
             VStack(alignment: .trailing, spacing: 8) {
                 TabView(selection: $page) {
@@ -224,12 +226,20 @@ private struct FullScreenGalleryView: View {
     let startIndex: Int
     @Environment(\.dismiss) private var dismiss
 
+    /// Figures are capped to the same readable measure as the text column so
+    /// wide (iPad) layouts don't stretch a w=1200 image past its pixels —
+    /// and the gallery keeps requesting the exact width the tier-1 offline
+    /// prefetch warms.
+    private static let figureMaxWidth: CGFloat = 700
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 36) {
                     ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
                         figure(index: index, photo: photo)
+                            .frame(maxWidth: Self.figureMaxWidth, alignment: .leading)
+                            .frame(maxWidth: .infinity)
                             .id(index)
                     }
                 }
@@ -244,6 +254,9 @@ private struct FullScreenGalleryView: View {
         }
         .background(Color.paper)
         .safeAreaInset(edge: .top, spacing: 0) { topBar }
+        // VoiceOver's standard escape gesture (two-finger scrub) closes the
+        // full-screen cover, like the X button.
+        .accessibilityAction(.escape) { dismiss() }
     }
 
     private var topBar: some View {

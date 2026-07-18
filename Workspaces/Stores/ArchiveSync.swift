@@ -5,10 +5,14 @@ import Foundation
 ///
 /// - Tier 1 — newest 50 issues, full, with images: their detail JSON is
 ///   ensured in `DetailCache` and every photo is fetched through the shared
-///   `ImageLoader` session at the widths the views request (gallery 1200,
-///   row thumbnail 300), so the cache keys match and recent issues render
-///   fully offline. Already-cached photos are local disk hits (HTTP caching
-///   via `URLCache`), not re-downloads.
+///   `ImageLoader` session at the widths the views request (gallery and
+///   full-width feed hero 1200, split-layout feed hero 600, row thumbnail
+///   300), so the cache keys match and recent issues render fully offline.
+///   Already-cached photos are local disk hits (HTTP caching via
+///   `URLCache`), not re-downloads. Photo prefetch only runs on
+///   unconstrained, inexpensive networks (Wi-Fi, not cellular or Low Data
+///   Mode) and photo-sync completion is only recorded when nearly every
+///   fetch succeeded, so a gated or interrupted sync retries next launch.
 /// - Tier 2 — full archive, text only: every published setup's detail JSON
 ///   (~534 docs ≈ 3 MB) is fetched in GROQ batches of 50 (~300 KB each) into
 ///   `DetailCache`, so any issue's text opens instantly offline; its photos
@@ -30,9 +34,11 @@ actor ArchiveSync {
 
     private var startedThisLaunch = false
 
-    /// Fire-and-forget entry point; safe to call repeatedly.
+    /// Fire-and-forget entry point; safe to call repeatedly. The text tier
+    /// runs at `.utility` so a fresh install has the archive's text within a
+    /// reasonable window; photo prefetch tasks stay at `.background`.
     nonisolated func kickoff() {
-        Task(priority: .background) { await self.run() }
+        Task(priority: .utility) { await self.run() }
     }
 
     private func run() async {
@@ -96,7 +102,14 @@ actor ArchiveSync {
         }
 
         // Tier 1: ensure the newest issues' photos are in the image disk
-        // cache, at the widths the views actually request.
+        // cache, at the canonical widths the views actually request:
+        // w=1200 (gallery figures + lead/full-width feed heroes), w=600
+        // (split-layout feed heroes), w=300 (index/saved row thumbnails).
+        // Completion is only recorded when >= 95% of the fetches succeeded
+        // (tolerates a few permanently broken CDN entries without retrying
+        // forever) — a cellular-gated or interrupted run records nothing and
+        // retries next launch, where already-cached photos are free local
+        // cache hits.
         var photosComplete = state?.photosSyncedNewest == newest
         if !photosComplete {
             var urls: [URL] = []
@@ -104,11 +117,13 @@ actor ArchiveSync {
                 guard let detail = DetailCache.load(slug: slug) else { continue }
                 urls.append(contentsOf: detail.photos.map { $0.url(width: 1200) })
                 if let hero = detail.photos.first {
+                    urls.append(hero.url(width: 600))
                     urls.append(hero.url(width: 300))
                 }
             }
-            await prefetch(urls)
-            photosComplete = true
+            let succeeded = await prefetch(urls)
+            let threshold = Int((Double(urls.count) * 0.95).rounded(.up))
+            photosComplete = !urls.isEmpty && succeeded >= threshold
         }
 
         if textComplete {
@@ -122,8 +137,9 @@ actor ArchiveSync {
 
     /// Fetches image URLs through the shared loader with a small concurrency
     /// window at background priority — polite to the CDN and the battery.
-    private func prefetch(_ urls: [URL]) async {
-        await withTaskGroup(of: Void.self) { group in
+    /// Returns how many URLs are now cached (fetched or already on disk).
+    private func prefetch(_ urls: [URL]) async -> Int {
+        await withTaskGroup(of: Bool.self) { group in
             var iterator = urls.makeIterator()
             func addNext() {
                 guard let url = iterator.next() else { return }
@@ -132,7 +148,12 @@ actor ArchiveSync {
                 }
             }
             for _ in 0..<Self.photoConcurrency { addNext() }
-            while await group.next() != nil { addNext() }
+            var succeeded = 0
+            while let ok = await group.next() {
+                if ok { succeeded += 1 }
+                addNext()
+            }
+            return succeeded
         }
     }
 

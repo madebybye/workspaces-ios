@@ -15,8 +15,14 @@ struct IndexView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .footnote) private var promptSize: CGFloat = 12
 
+    @State private var searchDebounceTask: Task<Void, Never>?
+
     private var isFiltering: Bool {
-        selectedTag != nil || !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        selectedTag != nil || isSearching
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -25,7 +31,10 @@ struct IndexView: View {
 
             if isFiltering {
                 filterBanner
-                SetupResultsList(store: results)
+                SetupResultsList(
+                    store: results,
+                    emptyText: isSearching ? "No results." : "Nothing filed under this yet."
+                )
             } else {
                 browseIndex
             }
@@ -34,8 +43,19 @@ struct IndexView: View {
             await tagStore.load()
             await gearIndex.load()
         }
-        .onChange(of: searchText) { applyFilters() }
+        .onChange(of: searchText) { debouncedApplyFilters() }
         .onChange(of: selectedTag) { applyFilters() }
+    }
+
+    /// Keystrokes are debounced ~300 ms so we query once per pause, not once
+    /// per character. Tag selection still applies immediately.
+    private func debouncedApplyFilters() {
+        searchDebounceTask?.cancel()
+        searchDebounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            applyFilters()
+        }
     }
 
     private func applyFilters() {
@@ -43,7 +63,9 @@ struct IndexView: View {
         results.tagSlug = selectedTag?.slug
         let trimmed = searchText.trimmingCharacters(in: .whitespaces)
         results.search = trimmed.isEmpty ? nil : trimmed
-        Task { await results.reload(showSpinner: true) }
+        // Keep the previous results on screen while the new query runs; the
+        // spinner only shows when there is nothing to keep showing.
+        Task { await results.reload(showSpinner: results.setups.isEmpty) }
     }
 
     // MARK: Search

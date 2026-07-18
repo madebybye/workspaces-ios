@@ -77,14 +77,21 @@ enum GROQ {
         """
 
     /// Feed page, optionally narrowed to a tag, a guest-name prefix search,
-    /// a piece of gear (token match on gear names), or a collection (setups
-    /// hold direct references to collection documents).
+    /// a piece of gear, or a collection (setups hold direct references to
+    /// collection documents).
+    ///
+    /// Gear filtering defaults to case-insensitive *exact* name equality so
+    /// result counts agree with the gear index's exact-name tallies;
+    /// `gearLoose: true` uses the old token `match` instead (the store falls
+    /// back to it when exact equality finds nothing, e.g. for variant
+    /// spellings reached from a detail page's gear rows).
     static func setups(
         offset: Int,
         limit: Int = pageSize,
         tagSlug: String? = nil,
         search: String? = nil,
         gearName: String? = nil,
+        gearLoose: Bool = false,
         collectionId: String? = nil
     ) -> String {
         var filters = [#"_type=="setup""#, notDraft]
@@ -95,7 +102,11 @@ enum GROQ {
             filters.append("guestName match \"\(escape(search))*\"")
         }
         if let gearName, !gearName.isEmpty {
-            filters.append("count(gear[name match \"\(escape(gearName))\"]) > 0")
+            if gearLoose {
+                filters.append("count(gear[name match \"\(escape(gearName))\"]) > 0")
+            } else {
+                filters.append("count(gear[lower(name) == \"\(escape(gearName.lowercased()))\"]) > 0")
+            }
         }
         if let collectionId {
             filters.append("references(\"\(escape(collectionId))\")")

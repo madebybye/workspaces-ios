@@ -156,9 +156,7 @@ struct FeedEntry: View {
 
     private var leadLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
-            photo(width: 1000)
-                .aspectRatio(4 / 3, contentMode: .fit)
-                .clipped()
+            photo(width: 1200, aspectRatio: 4 / 3)
 
             VStack(alignment: .leading, spacing: 10) {
                 Kicker(setup.kickerLine)
@@ -192,9 +190,7 @@ struct FeedEntry: View {
 
     private var fullLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
-            photo(width: 900)
-                .aspectRatio(3 / 2, contentMode: .fit)
-                .clipped()
+            photo(width: 1200, aspectRatio: 3 / 2)
 
             VStack(alignment: .leading, spacing: 8) {
                 Kicker(setup.kickerLine, size: 10)
@@ -258,17 +254,26 @@ struct FeedEntry: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            photo(width: 600)
-                .aspectRatio(3 / 4, contentMode: .fit)
+            photo(width: 600, aspectRatio: 3 / 4)
                 .frame(width: 185)
-                .clipped()
         }
         .padding(.leading, 20)
         .contentShape(Rectangle())
     }
 
-    private func photo(width: Int) -> some View {
-        RemoteImage(url: setup.hero?.url(width: width))
+    /// The hero photo cropped to a fixed aspect ratio. `Color.clear` (which
+    /// has no intrinsic size) owns the layout and the image is only an
+    /// overlay, so the cell strictly respects the width its column proposes —
+    /// a `.fill` image sized by its own aspect ratio would otherwise report a
+    /// wider ideal width and push the whole cell off its column (the iPad
+    /// landscape grid bug). Widths stay in the prefetch's canonical set
+    /// {1200, 600, 300} so tier-1-synced issues render offline with no
+    /// duplicate downloads.
+    private func photo(width: Int, aspectRatio: CGFloat) -> some View {
+        Color.clear
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .overlay { RemoteImage(url: setup.hero?.url(width: width)) }
+            .clipped()
             .accessibilityLabel(setup.hero?.alt ?? "Workspace photo of \(setup.guestName)")
     }
 }

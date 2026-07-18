@@ -195,7 +195,17 @@ struct GearItem: Codable, Identifiable, Hashable {
     var affiliateUrl: URL?
     var description: String?
 
-    var id: String { (category ?? "") + name + (affiliateUrl?.absoluteString ?? "") }
+    /// Positionally unique identity, regenerated on every decode. Real CMS
+    /// documents repeat the same gear entry verbatim, so any content-derived
+    /// id produces duplicate `ForEach` ids and undefined SwiftUI rendering.
+    /// Excluded from coding (regenerated when the disk caches are read back)
+    /// and from equality/hashing (so cache-vs-fresh change detection still
+    /// compares content, not identity).
+    let id: UUID
+
+    private enum CodingKeys: String, CodingKey {
+        case name, category, affiliateUrl, description
+    }
 
     /// Tolerant: only the name is essential. In particular a malformed
     /// `affiliateUrl` (issue 230 has "http://JBL Tune 600BTNC") must not
@@ -206,6 +216,21 @@ struct GearItem: Codable, Identifiable, Hashable {
         category = (try? container.decodeIfPresent(String.self, forKey: .category)) ?? nil
         affiliateUrl = (try? container.decodeIfPresent(URL.self, forKey: .affiliateUrl)) ?? nil
         description = (try? container.decodeIfPresent(String.self, forKey: .description)) ?? nil
+        id = UUID()
+    }
+
+    static func == (lhs: GearItem, rhs: GearItem) -> Bool {
+        lhs.name == rhs.name
+            && lhs.category == rhs.category
+            && lhs.affiliateUrl == rhs.affiliateUrl
+            && lhs.description == rhs.description
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(category)
+        hasher.combine(affiliateUrl)
+        hasher.combine(description)
     }
 }
 
@@ -213,7 +238,17 @@ struct QAItem: Codable, Identifiable, Hashable {
     let question: String
     var answer: PortableText?
 
-    var id: String { question }
+    /// Positionally unique identity, regenerated on every decode. 13 real
+    /// issues repeat a question with a *different* answer (e.g.
+    /// 232-mark-phillips has "What is on your desk?" twice), so a
+    /// question-derived id produces duplicate `ForEach` ids and wrong answers
+    /// on screen. Excluded from coding and from equality/hashing (see
+    /// `GearItem.id`).
+    let id: UUID
+
+    private enum CodingKeys: String, CodingKey {
+        case question, answer
+    }
 
     /// Tolerant: only the question is essential; an unreadable answer
     /// degrades to nil.
@@ -221,6 +256,16 @@ struct QAItem: Codable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         question = try container.decode(String.self, forKey: .question)
         answer = (try? container.decodeIfPresent(PortableText.self, forKey: .answer)) ?? nil
+        id = UUID()
+    }
+
+    static func == (lhs: QAItem, rhs: QAItem) -> Bool {
+        lhs.question == rhs.question && lhs.answer == rhs.answer
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(question)
+        hasher.combine(answer)
     }
 }
 

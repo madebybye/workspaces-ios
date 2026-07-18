@@ -19,9 +19,10 @@ final class CollectionStore {
         if !collections.isEmpty && !forceFresh { return }
         if collections.isEmpty { phase = .loading }
         do {
+            // Lossy: one malformed collection document must not kill the page.
             collections = try await SanityClient.shared.fetch(
-                [SetupCollection].self, query: GROQ.collections, forceFresh: forceFresh
-            )
+                LossyArray<SetupCollection>.self, query: GROQ.collections, forceFresh: forceFresh
+            ).wrappedValue
             phase = .loaded
         } catch is CancellationError {
         } catch {

@@ -21,6 +21,12 @@ struct RootView: View {
     @State private var section: Section = .latest
     @State private var path = NavigationPath()
 
+    /// Sections the reader has opened this launch. Visited sections stay in
+    /// the hierarchy (hidden, not removed) so switching away and back keeps
+    /// scroll position and store state; unvisited ones are never built, so
+    /// launch stays lazy and memory stays flat.
+    @State private var visitedSections: Set<Section> = [.latest]
+
     // Stores live here so state survives switching sections.
     @State private var feed = FeedStore()
     @State private var savedStore = SavedStore()
@@ -36,24 +42,27 @@ struct RootView: View {
             VStack(spacing: 0) {
                 Masthead(section: $section)
 
-                switch section {
-                case .latest:
-                    FeedView(store: feed)
-                case .saved:
-                    SavedView(store: savedStore)
-                case .collections:
-                    CollectionsView(store: collectionStore)
-                case .index:
-                    IndexView(
-                        tagStore: tagStore,
-                        gearIndex: gearIndex,
-                        results: results,
-                        searchText: $searchText,
-                        selectedTag: $selectedTag
-                    )
+                // Visited sections are kept alive and merely hidden so that
+                // e.g. LATEST retains its scroll position across switches.
+                ZStack {
+                    sectionContent(.latest) { FeedView(store: feed) }
+                    sectionContent(.saved) { SavedView(store: savedStore) }
+                    sectionContent(.collections) { CollectionsView(store: collectionStore) }
+                    sectionContent(.index) {
+                        IndexView(
+                            tagStore: tagStore,
+                            gearIndex: gearIndex,
+                            results: results,
+                            searchText: $searchText,
+                            selectedTag: $selectedTag
+                        )
+                    }
                 }
             }
             .background(Color.paper)
+            .onChange(of: section) {
+                visitedSections.insert(section)
+            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: SetupSummary.self) { setup in
                 SetupDetailView(summary: setup, saved: savedStore)
@@ -66,6 +75,21 @@ struct RootView: View {
             }
         }
         .tint(.primary)
+    }
+
+    /// Builds a section's view once it has been visited, then keeps it in
+    /// the tree — invisible, untouchable, and hidden from VoiceOver while
+    /// another section is frontmost.
+    @ViewBuilder
+    private func sectionContent<Content: View>(
+        _ value: Section, @ViewBuilder content: () -> Content
+    ) -> some View {
+        if visitedSections.contains(value) {
+            content()
+                .opacity(section == value ? 1 : 0)
+                .allowsHitTesting(section == value)
+                .accessibilityHidden(section != value)
+        }
     }
 }
 
@@ -96,9 +120,13 @@ private struct Masthead: View {
 
     @ViewBuilder
     private var nameplate: some View {
+        // The nameplate never wraps or truncates: at large Dynamic Type
+        // sizes it scales down to fit on one line instead.
         let title = Text("WORKSPACES")
             .scaledFont(size: 28, weight: .black, design: .serif, relativeTo: .title)
             .kerning(1.0)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
         let dateline = Kicker(Date.now.dateline, size: 10, color: .tertiary)
 
         if dynamicTypeSize.isAccessibilitySize {

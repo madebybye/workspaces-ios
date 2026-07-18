@@ -16,7 +16,10 @@ final class TagStore {
         if !tags.isEmpty { return }
         phase = .loading
         do {
-            tags = try await SanityClient.shared.fetch([Tag].self, query: GROQ.allTags)
+            // Lossy: one malformed tag document must not kill the whole index.
+            tags = try await SanityClient.shared.fetch(
+                LossyArray<Tag>.self, query: GROQ.allTags
+            ).wrappedValue
             phase = .loaded
         } catch is CancellationError {
         } catch {
