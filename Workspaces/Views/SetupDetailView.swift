@@ -237,10 +237,15 @@ private struct FullScreenGalleryView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 36) {
                     ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
-                        figure(index: index, photo: photo)
-                            .frame(maxWidth: Self.figureMaxWidth, alignment: .leading)
-                            .frame(maxWidth: .infinity)
-                            .id(index)
+                        GalleryFigure(
+                            index: index,
+                            count: photos.count,
+                            photo: photo,
+                            issueNumber: issueNumber
+                        )
+                        .frame(maxWidth: Self.figureMaxWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity)
+                        .id(index)
                     }
                 }
                 .padding(.top, 6)
@@ -285,16 +290,66 @@ private struct FullScreenGalleryView: View {
         .background(Color.paper)
     }
 
-    private func figure(index: Int, photo: Photo) -> some View {
+}
+
+/// One figure of the full-screen stack: the photo (pinch-zoomable once
+/// decoded, with pan and double-tap handled by a UIScrollView underneath),
+/// its FIG. caption, and a per-photo share affordance. Sharing hands the
+/// full-resolution cached rendition (w=1200) to the system sheet, whose
+/// built-in "Save Image" activity saves to Photos without the app needing
+/// a photo-library usage description.
+private struct GalleryFigure: View {
+    let index: Int
+    let count: Int
+    let photo: Photo
+    let issueNumber: Int
+
+    @State private var image: UIImage?
+    @State private var shared: SharedPhoto?
+    @State private var resetToken = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var fullResURL: URL { photo.url(width: 1200) }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            RemoteImage(url: photo.url(width: 1200), contentMode: .fit)
+            figureImage
                 .frame(maxWidth: .infinity)
+                .contextMenu { shareActions }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(photo.alt ?? "Workspace photo")
-                .accessibilityValue("Photo \(index + 1) of \(photos.count)")
+                .accessibilityValue("Photo \(index + 1) of \(count)")
 
+            captionRow
+        }
+        // Snap back to 1x when this figure scrolls offscreen so it reappears
+        // (or is revisited) un-zoomed.
+        .onDisappear { resetToken += 1 }
+        .task { await load() }
+    }
+
+    @ViewBuilder private var figureImage: some View {
+        if let image {
+            ZoomableImageView(
+                image: image,
+                resetToken: resetToken,
+                reduceMotion: reduceMotion
+            )
+            .aspectRatio(
+                image.size.width / max(image.size.height, 1),
+                contentMode: .fit
+            )
+        } else {
+            // Same placeholder/failure chrome as everywhere else; its load
+            // dedupes with ours through the shared ImageLoader.
+            RemoteImage(url: fullResURL, contentMode: .fit)
+        }
+    }
+
+    private var captionRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Kicker("Fig. \(index + 1) / \(photos.count)", size: 9, color: .tertiary)
+                Kicker("Fig. \(index + 1) / \(count)", size: 9, color: .tertiary)
                     .monospacedDigit()
 
                 if let alt = photo.alt?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -307,9 +362,76 @@ private struct FullScreenGalleryView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 20)
             .accessibilityHidden(true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let shared {
+                shareLink(for: shared)
+            }
         }
+        .padding(.horizontal, 20)
+    }
+
+    /// Quiet tracked-caps SHARE affordance, matching the gear rows' SHOP link.
+    private func shareLink(for item: SharedPhoto) -> some View {
+        ShareLink(item: item, preview: sharePreview) {
+            HStack(spacing: 3) {
+                Text("SHARE")
+                    .scaledFont(size: 10, weight: .semibold, relativeTo: .caption)
+                    .kerning(1.4)
+                    .underline()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(Color.inkSecondary)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Share photo")
+        .accessibilityHint("Opens the share sheet. Save Image saves it to your photo library.")
+    }
+
+    @ViewBuilder private var shareActions: some View {
+        if let shared {
+            ShareLink(item: shared, preview: sharePreview) {
+                Label("Share Photo", systemImage: "square.and.arrow.up")
+            }
+            // Safe to call directly: the project declares
+            // NSPhotoLibraryAddUsageDescription, so this shows the standard
+            // add-only permission prompt instead of crashing.
+            Button {
+                if let image {
+                    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+                }
+            } label: {
+                Label("Save to Photos", systemImage: "square.and.arrow.down")
+            }
+            Button {
+                UIPasteboard.general.image = image
+            } label: {
+                Label("Copy Photo", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    private var sharePreview: SharePreview<Image, Never> {
+        if let image {
+            SharePreview(photo.alt ?? "Workspace photo", image: Image(uiImage: image))
+        } else {
+            SharePreview(photo.alt ?? "Workspace photo", image: Image(systemName: "photo"))
+        }
+    }
+
+    private func load() async {
+        if image == nil {
+            image = try? await ImageLoader.shared.image(for: fullResURL)
+        }
+        guard image != nil, shared == nil else { return }
+        shared = try? await SharedPhoto.load(
+            from: fullResURL,
+            fileName: "workspaces-issue-\(issueNumber)-fig-\(index + 1).jpg"
+        )
     }
 }
 

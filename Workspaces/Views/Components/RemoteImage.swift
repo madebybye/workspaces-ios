@@ -118,6 +118,17 @@ final class ImageLoader: @unchecked Sendable {
         return true
     }
 
+    /// Raw encoded bytes for a photo, fetched through the same session (and
+    /// thus the same disk-backed URLCache) the views use — a photo that has
+    /// already been displayed or prefetched resolves from local cache with
+    /// no network hit. Data-level access for share/export flows that need
+    /// the original encoded image rather than the decoded, downsampled
+    /// `UIImage` the in-memory cache holds.
+    func imageData(for url: URL) async throws -> Data {
+        let (data, _) = try await session.data(from: url)
+        return data
+    }
+
     func image(for url: URL) async throws -> UIImage {
         if let cached = cachedImage(for: url) { return cached }
 

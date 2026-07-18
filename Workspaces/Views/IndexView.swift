@@ -17,6 +17,16 @@ struct IndexView: View {
 
     @State private var searchDebounceTask: Task<Void, Never>?
 
+    /// Offline full-text index over the synced archive. Owned here so it
+    /// lives as long as the INDEX section does (sections stay resident once
+    /// visited).
+    @State private var searchIndex = SearchIndexStore()
+
+    /// Ranked local hits currently on screen; nil means the network
+    /// `results` store is driving (tag filter active, archive not yet
+    /// synced, or not searching at all).
+    @State private var localHits: [SearchIndexStore.Hit]?
+
     private var isFiltering: Bool {
         selectedTag != nil || isSearching
     }
@@ -31,10 +41,14 @@ struct IndexView: View {
 
             if isFiltering {
                 filterBanner
-                SetupResultsList(
-                    store: results,
-                    emptyText: isSearching ? "No results." : "Nothing filed under this yet."
-                )
+                if isSearching, selectedTag == nil, let localHits {
+                    LocalSearchResultsList(hits: localHits)
+                } else {
+                    SetupResultsList(
+                        store: results,
+                        emptyText: isSearching ? "No results." : "Nothing filed under this yet."
+                    )
+                }
             } else {
                 browseIndex
             }
@@ -42,26 +56,64 @@ struct IndexView: View {
         .task {
             await tagStore.load()
             await gearIndex.load()
+            // Warm the offline search index so the first keystroke doesn't
+            // pay the build cost.
+            await searchIndex.prepare()
         }
         .onChange(of: searchText) { debouncedApplyFilters() }
         .onChange(of: selectedTag) { applyFilters() }
     }
 
-    /// Keystrokes are debounced ~300 ms so we query once per pause, not once
-    /// per character. Tag selection still applies immediately.
+    /// Keystrokes are debounced so we query once per pause, not once per
+    /// character: ~100 ms when the local index is answering (cheap, instant),
+    /// the original ~300 ms when queries still go to the network. Tag
+    /// selection still applies immediately.
     private func debouncedApplyFilters() {
         searchDebounceTask?.cancel()
+        let interval: Duration = .milliseconds(searchIndex.isAvailable == true ? 100 : 300)
         searchDebounceTask = Task {
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: interval)
             guard !Task.isCancelled else { return }
             applyFilters()
         }
     }
 
     private func applyFilters() {
-        guard isFiltering else { return }
-        results.tagSlug = selectedTag?.slug
+        guard isFiltering else {
+            localHits = nil
+            return
+        }
         let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+
+        // Plain text search answers from the offline full-text index when
+        // the archive is synced. A tag filter forces the network path: the
+        // cached details carry no tag data, so tag membership can only be
+        // evaluated server-side (this keeps tag results identical to before).
+        if !trimmed.isEmpty, selectedTag == nil {
+            Task {
+                let hits = await searchIndex.search(trimmed)
+                // A newer keystroke or a tag selection may have superseded
+                // this query while it ran; drop stale answers.
+                guard trimmed == searchText.trimmingCharacters(in: .whitespaces),
+                      selectedTag == nil
+                else { return }
+                if let hits {
+                    localHits = hits
+                } else {
+                    // Archive empty / not yet synced (first-launch cold
+                    // state): fall back to the network guest-name search.
+                    localHits = nil
+                    runNetworkSearch(trimmed)
+                }
+            }
+        } else {
+            localHits = nil
+            runNetworkSearch(trimmed)
+        }
+    }
+
+    private func runNetworkSearch(_ trimmed: String) {
+        results.tagSlug = selectedTag?.slug
         results.search = trimmed.isEmpty ? nil : trimmed
         // Keep the previous results on screen while the new query runs; the
         // spinner only shows when there is nothing to keep showing.
@@ -69,6 +121,13 @@ struct IndexView: View {
     }
 
     // MARK: Search
+
+    /// The prompt advertises full-text search once the offline index is up;
+    /// until then (first-launch cold state) queries go to the network, which
+    /// only matches guest names.
+    private var searchPrompt: String {
+        searchIndex.isAvailable == true ? "Search the archive" : "Search by guest name"
+    }
 
     private var searchField: some View {
         VStack(spacing: 10) {
@@ -80,7 +139,7 @@ struct IndexView: View {
                 TextField(
                     "",
                     text: $searchText,
-                    prompt: Text("SEARCH BY GUEST NAME")
+                    prompt: Text(searchPrompt.uppercased())
                         .font(.system(size: promptSize, weight: .medium))
                         .kerning(1.5)
                         .foregroundStyle(Color.inkTertiary)
@@ -88,7 +147,7 @@ struct IndexView: View {
                 .scaledFont(size: 15, design: .serif, relativeTo: .body)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .accessibilityLabel("Search by guest name")
+                .accessibilityLabel(searchPrompt)
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -297,6 +356,45 @@ struct IndexView: View {
     }
 }
 
+/// Offline full-text results: ranked hits from `SearchIndexStore`, rendered
+/// with the same compact rows as the network results plus a small
+/// tracked-caps scope hint ("IN GEAR", "IN Q&A"…) on hits that landed
+/// outside the guest name, so body-text matches aren't confusing. No
+/// pagination — the whole archive answers at once.
+private struct LocalSearchResultsList: View {
+    let hits: [SearchIndexStore.Hit]
+
+    var body: some View {
+        if hits.isEmpty {
+            VStack(spacing: 12) {
+                Kicker("No results")
+                Text("Nothing in the archive matches.")
+                    .scaledFont(size: 15, design: .serif, relativeTo: .subheadline)
+                    .italic()
+                    .foregroundStyle(Color.inkSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(hits) { hit in
+                        NavigationLink(value: hit.summary) {
+                            IndexResultRow(setup: hit.summary, matchScope: hit.scope.hint)
+                        }
+                        .buttonStyle(.plain)
+
+                        if hit.id != hits.last?.id {
+                            Hairline(opacity: 0.12)
+                                .padding(.leading, 20)
+                        }
+                    }
+                }
+                .padding(.bottom, 48)
+            }
+        }
+    }
+}
+
 /// A phase-aware, paginated list of compact result rows. Shared by the index
 /// search/tag results and the gear and collection screens.
 struct SetupResultsList: View {
@@ -354,10 +452,19 @@ struct SetupResultsList: View {
 struct IndexResultRow: View {
     let setup: SetupSummary
 
+    /// Optional tracked-caps hint of where a full-text search hit landed
+    /// (e.g. "In gear"); nil everywhere except local search results.
+    var matchScope: String?
+
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
-                Kicker("Issue \(setup.issueNumber)", size: 9, color: .tertiary)
+                HStack(spacing: 10) {
+                    Kicker("Issue \(setup.issueNumber)", size: 9, color: .tertiary)
+                    if let matchScope {
+                        Kicker(matchScope, size: 9, color: .secondary)
+                    }
+                }
 
                 Text(setup.guestName)
                     .scaledFont(size: 19, weight: .semibold, design: .serif, relativeTo: .title3)
@@ -382,6 +489,9 @@ struct IndexResultRow: View {
         .padding(.vertical, 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(setup.accessibilitySummary)
+        .accessibilityLabel(
+            matchScope.map { "\(setup.accessibilitySummary), match \($0.lowercased())" }
+                ?? setup.accessibilitySummary
+        )
     }
 }

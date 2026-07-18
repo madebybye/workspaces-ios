@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Export options for TestFlight / App Store Connect distribution.
+	  Used by: xcodebuild -exportArchive -exportOptionsPlist ExportOptions.plist
+	  See scripts/archive-and-upload.sh for the full pipeline.
+	-->
+
+	<!-- Distribute to App Store Connect (TestFlight + App Store). -->
+	<key>method</key>
+	<string>app-store-connect</string>
+
+	<!-- REQUIRED: replace with the Team ID that owns the App ID / app record.
+	     This should be the workspaces.xyz owner's team, not necessarily the
+	     team used for local development signing. -->
+	<key>teamID</key>
+	<string>TEAM_ID_HERE</string>
+
+	<!-- Let App Store Connect manage CFBundleVersion / CFBundleShortVersionString
+	     collisions automatically on upload. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<true/>
+
+	<!-- Upload dSYMs so TestFlight/App Store crash reports are symbolicated. -->
+	<key>uploadSymbols</key>
+	<true/>
+
+	<!-- "export" writes an .ipa to -exportPath; change to "upload" to have
+	     xcodebuild send the build straight to App Store Connect instead
+	     (the archive-and-upload.sh script drives this). -->
+	<key>destination</key>
+	<string>export</string>
+
+	<!-- Automatic signing: with -allowProvisioningUpdates, Xcode will create or
+	     download the App Store provisioning profile and (cloud-managed)
+	     Apple Distribution certificate for the team above. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+
+	<!-- App thinning is handled by App Store Connect for app-store-connect
+	     distribution; no thinning keys needed here. -->
+</dict>
+</plist>
