@@ -5,6 +5,7 @@ struct WorkspacesApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task { await NotificationScheduler.scheduleWeeklyIssueReminder() }
         }
     }
 }
