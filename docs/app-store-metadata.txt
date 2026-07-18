@@ -1,0 +1,60 @@
+WORKSPACES — APP STORE METADATA
+================================
+
+PROMOTIONAL TEXT (146/170 chars — editable anytime without review)
+------------------------------------------------------------------
+Weekly tours of real desk setups from designers, founders, and builders. A new issue every Saturday — and the whole archive, offline, in your pocket.
+
+
+DESCRIPTION (~1,450/4,000 chars)
+--------------------------------
+Explore the workspaces of modern creators.
+
+Workspaces is the companion app to workspaces.xyz — the weekly tour of real desk setups from designers, founders, and builders, read by 21,000+ people. A new issue lands every Saturday.
+
+EVERY SETUP HAS A STORY
+Step inside 500+ real home offices and studios. Each issue is a photo tour with an interview: who they are, what they make, and the thinking behind their space.
+
+SEE THE GEAR BEHIND THE WORK
+Every desk, chair, display, and keyboard is catalogued. Tap any item to see every setup that uses it, or browse the ranked list of the most-featured gear across the archive. Only gear real people actually use — no sponsored placements.
+
+THE WHOLE ARCHIVE, OFFLINE
+Every issue since 2020 is cached on your device. Read anywhere and search everything — names, interviews, gear, and tags — instantly, even without a connection.
+
+MADE FOR READING
+An editorial, magazine-style design with full-bleed photography. Save setups to your list, browse curated collections, pinch to zoom on every photo, and share the shots that inspire you. Beautiful on iPhone and iPad, in light and dark.
+
+— A new setup every Saturday, with a gentle weekly reminder
+— 500+ issues, fully searchable and offline
+— Browse by tag, collection, or gear
+— Save your favorites
+— No accounts, no tracking
+
+Workspaces is an unofficial companion to workspaces.xyz. Gear links may be affiliate links.
+
+
+KEYWORDS (99/100 chars)
+-----------------------
+desk setup,home office,gear,wfh,remote work,standing desk,battlestation,interior,design,inspiration
+
+
+SUPPORT URL
+-----------
+https://github.com/madebybye/workspaces-ios/issues
+
+MARKETING URL
+-------------
+https://workspaces.xyz
+
+COPYRIGHT (43/200 chars)
+------------------------
+© 2026 Robert Bye. Content © workspaces.xyz
+
+
+NOTES
+-----
+- The "21,000+ readers" and "500+" figures come from workspaces.xyz as of
+  2026-07-18 — refresh them when updating the listing.
+- The final description line doubles as the unofficial-client disclosure
+  (App Store review 5.2.2); written site-owner authorization is still
+  recommended before public App Store release — see TESTFLIGHT.md.
